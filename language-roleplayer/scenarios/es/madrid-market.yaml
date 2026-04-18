@@ -1,0 +1,20 @@
+scenario_id: madrid-market-01
+title: "Shopping at a Madrid Market"
+target_language: es
+difficulty: beginner
+setting: >
+  You're at the Mercado de San Miguel in Madrid, a vibrant indoor market filled
+  with colorful stalls selling fresh produce, cured meats, cheeses, and tapas.
+  You're at a fruit and vegetable stall with beautifully arranged produce.
+npc_role: "A cheerful market vendor named Carlos"
+npc_personality: "Energetic and friendly, uses simple language, loves to recommend products"
+vocabulary_domain:
+  - food
+  - shopping
+  - numbers
+  - currency
+  - quantities
+max_turns: 15
+opening_line: "Hola, buenos dias! Bienvenido al mercado. Tenemos frutas muy frescas hoy. Que le puedo ofrecer?"
+success_criteria: "Successfully purchase at least two items, ask about prices, and understand the total"
+voice_id: ""

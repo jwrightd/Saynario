@@ -1,0 +1,21 @@
+scenario_id: tokyo-ramen-01
+title: "Ordering Ramen in Tokyo"
+target_language: ja
+difficulty: beginner
+setting: >
+  You've just entered a small, popular ramen shop in Shinjuku, Tokyo. There's a
+  ticket vending machine at the entrance (common in Japanese ramen shops), but
+  the staff member is willing to help you order at the counter instead. The shop
+  is warm and steamy with a long counter and about 10 seats.
+npc_role: "A friendly ramen shop staff member named Yuki"
+npc_personality: "Cheerful and accommodating, speaks slowly and clearly for foreigners, very polite"
+vocabulary_domain:
+  - food
+  - ordering
+  - Japanese cuisine
+  - politeness
+  - numbers
+max_turns: 12
+opening_line: "Irasshaimase! Okyaku-sama, nanmei-sama desu ka? O hitori-sama desu ka?"
+success_criteria: "Successfully order a bowl of ramen with desired toppings and a drink"
+voice_id: ""

@@ -1,0 +1,19 @@
+scenario_id: paris-metro-01
+title: "Navigating the Paris Metro"
+target_language: fr
+difficulty: intermediate
+setting: >
+  You're standing at the ticket counter of a busy Paris Metro station (Chatelet-Les Halles).
+  You need to figure out which line to take, buy the right ticket, and understand directions.
+  There's a queue forming behind you so you need to be reasonably efficient.
+npc_role: "A slightly hurried but helpful Metro ticket agent named Sophie"
+npc_personality: "Efficient and professional, speaks at a natural pace, will repeat if asked"
+vocabulary_domain:
+  - transportation
+  - directions
+  - tickets
+  - city navigation
+max_turns: 12
+opening_line: "Bonjour! Oui, je peux vous aider. Vous allez ou aujourd'hui?"
+success_criteria: "Buy the correct ticket and understand which Metro line to take and where to transfer"
+voice_id: ""

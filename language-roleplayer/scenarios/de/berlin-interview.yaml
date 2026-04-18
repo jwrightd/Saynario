@@ -1,0 +1,20 @@
+scenario_id: berlin-interview-01
+title: "Job Interview in Berlin"
+target_language: de
+difficulty: advanced
+setting: >
+  You're in a modern office in Berlin-Mitte for a job interview at a tech startup.
+  The interviewer is the Head of Engineering. The office is minimalist with large
+  windows overlooking the Spree river. This is a formal professional setting.
+npc_role: "A professional but approachable Head of Engineering named Dr. Muller"
+npc_personality: "Formal and thorough, asks detailed questions, expects articulate responses, uses professional German"
+vocabulary_domain:
+  - business
+  - technology
+  - professional
+  - qualifications
+  - workplace
+max_turns: 20
+opening_line: "Guten Tag, herzlich willkommen bei TechStart Berlin. Ich bin Dr. Muller, Leiter der Entwicklungsabteilung. Bitte nehmen Sie Platz. Erzahlen Sie mir zunachst etwas uber sich selbst und Ihre bisherige Berufserfahrung."
+success_criteria: "Introduce yourself, describe your experience, answer at least two technical questions, and ask an intelligent question about the role"
+voice_id: ""

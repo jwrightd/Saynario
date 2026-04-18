@@ -1,0 +1,250 @@
+"""Tests for the core service modules."""
+
+import os
+import pytest
+
+# Force mock mode
+os.environ["MOCK_MODE"] = "true"
+
+from app.services.stt import (
+    create_stt_service,
+    MockSTTService,
+    pcm16le_to_wav_bytes,
+    prepare_audio_for_transcription,
+)
+from app.services.llm import create_llm_service, MockLLMService, LLMService
+from app.services.tts import create_tts_service, MockTTSService
+from app.services.vad import create_vad_service, MockVADService
+from app.services.evaluation import create_evaluation_service, MockEvaluationService
+from app.services.session_manager import SessionManager
+from app.services.scenario_loader import load_scenarios, get_scenario, get_all_scenarios
+
+
+# ── Factory Tests ──────────────────────────────────────────
+
+def test_stt_factory_returns_mock():
+    stt = create_stt_service()
+    assert isinstance(stt, MockSTTService)
+
+
+def test_llm_factory_returns_mock():
+    llm = create_llm_service()
+    assert isinstance(llm, MockLLMService)
+
+
+def test_tts_factory_returns_mock():
+    tts = create_tts_service()
+    assert isinstance(tts, MockTTSService)
+
+
+def test_vad_factory_returns_mock():
+    vad = create_vad_service()
+    assert isinstance(vad, MockVADService)
+
+
+def test_eval_factory_returns_mock():
+    ev = create_evaluation_service()
+    assert isinstance(ev, MockEvaluationService)
+
+
+# ── Mock STT ───────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_mock_stt_french():
+    stt = MockSTTService()
+    text = await stt.transcribe(b"fake audio", "fr")
+    assert len(text) > 0
+    assert isinstance(text, str)
+
+
+@pytest.mark.asyncio
+async def test_mock_stt_default():
+    stt = MockSTTService()
+    text = await stt.transcribe(b"fake audio", "xx")
+    assert "Hello" in text
+
+
+def test_prepare_audio_for_transcription_wraps_raw_pcm():
+    raw_pcm = b"\x00\x00\xff\x7f"
+    prepared_audio, filename = prepare_audio_for_transcription(raw_pcm)
+
+    assert filename == "audio.wav"
+    assert prepared_audio[:4] == b"RIFF"
+    assert prepared_audio[8:12] == b"WAVE"
+    assert len(prepared_audio) > len(raw_pcm)
+
+
+def test_prepare_audio_for_transcription_preserves_webm():
+    webm_audio = b"\x1A\x45\xDF\xA3mock-webm"
+    prepared_audio, filename = prepare_audio_for_transcription(webm_audio)
+
+    assert filename == "audio.webm"
+    assert prepared_audio == webm_audio
+
+
+def test_pcm16le_to_wav_bytes_includes_pcm_payload():
+    raw_pcm = b"\x00\x00\x01\x00\xff\x7f"
+    wav_audio = pcm16le_to_wav_bytes(raw_pcm)
+
+    assert wav_audio[:4] == b"RIFF"
+    assert wav_audio.endswith(raw_pcm)
+
+
+# ── Mock LLM ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_mock_llm_response():
+    llm = MockLLMService()
+    scenario = {"target_language": "fr"}
+    response = await llm.generate_response([], scenario)
+    assert len(response) > 0
+
+
+@pytest.mark.asyncio
+async def test_mock_llm_streaming():
+    llm = MockLLMService()
+    scenario = {"target_language": "es"}
+    tokens = []
+    async for token in llm.stream_response([], scenario):
+        tokens.append(token)
+    assert len(tokens) > 0
+    full_text = "".join(tokens)
+    assert len(full_text) > 0
+
+
+def test_vocab_hint_payload_parser_handles_fenced_json():
+    payload = """```json
+    [{"word":"bonjour","translation":"hello","type":"phrase"}]
+    ```"""
+
+    result = LLMService._parse_vocab_hint_payload(payload, __import__("json"))
+
+    assert result == [{"word": "bonjour", "translation": "hello", "type": "phrase"}]
+
+
+# ── Mock TTS ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_mock_tts_synthesis():
+    tts = MockTTSService()
+    audio = await tts.synthesize("Bonjour", "fr")
+    assert isinstance(audio, bytes)
+    assert len(audio) > 0
+
+
+@pytest.mark.asyncio
+async def test_mock_tts_streaming():
+    tts = MockTTSService()
+    chunks = []
+    async for chunk in tts.stream_synthesis("Hola", "es"):
+        chunks.append(chunk)
+    assert len(chunks) > 0
+
+
+# ── Mock VAD ──────────────────────────────────────────────
+
+def test_mock_vad_detects_speech_end():
+    vad = MockVADService()
+    # First 3 chunks should be speech
+    for _ in range(3):
+        result = vad.process_chunk(b"x" * 100)
+        assert result["is_speech"] is True
+        assert result["speech_ended"] is False
+
+    # 4th chunk should signal speech ended
+    result = vad.process_chunk(b"x" * 100)
+    assert result["speech_ended"] is True
+
+
+def test_mock_vad_reset():
+    vad = MockVADService()
+    for _ in range(5):
+        vad.process_chunk(b"x" * 100)
+    vad.reset()
+    result = vad.process_chunk(b"x" * 100)
+    assert result["is_speech"] is True
+    assert result["speech_ended"] is False
+
+
+# ── Mock Evaluation ───────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_mock_evaluation():
+    ev = MockEvaluationService()
+    report = await ev.evaluate(
+        [{"role": "user", "content": "Bonjour"}],
+        {"target_language": "fr", "difficulty": "beginner"},
+    )
+    assert report.overall_score > 0
+    assert report.cefr_estimate in ["A1", "A2", "B1", "B2", "C1", "C2"]
+    assert isinstance(report.grammar_errors, list)
+
+
+# ── Session Manager ───────────────────────────────────────
+
+def test_session_manager_create_and_get():
+    mgr = SessionManager()
+    scenario = {"scenario_id": "test", "opening_line": "Bonjour!", "max_turns": 10}
+    state = mgr.create_session("s1", scenario)
+
+    assert state.session_id == "s1"
+    assert len(state.conversation_history) == 1  # Opening line
+
+    fetched = mgr.get_session("s1")
+    assert fetched is not None
+    assert fetched.session_id == "s1"
+
+
+def test_session_manager_add_turns():
+    mgr = SessionManager()
+    scenario = {"scenario_id": "test", "opening_line": "", "max_turns": 5}
+    state = mgr.create_session("s2", scenario)
+
+    state.add_user_turn("Je voudrais un cafe")
+    state.add_npc_turn("Bien sur! Un cafe noir?")
+
+    assert state.turn_count == 2
+    assert len(state.conversation_history) == 2
+
+
+def test_session_manager_end_session():
+    mgr = SessionManager()
+    scenario = {"scenario_id": "test", "opening_line": "", "max_turns": 5}
+    mgr.create_session("s3", scenario)
+
+    ended = mgr.end_session("s3")
+    assert ended is not None
+
+    assert mgr.get_session("s3") is None
+
+
+def test_session_manager_turn_limit():
+    mgr = SessionManager()
+    scenario = {"scenario_id": "test", "opening_line": "", "max_turns": 2}
+    state = mgr.create_session("s4", scenario)
+
+    for i in range(4):
+        state.add_user_turn(f"turn {i}")
+
+    assert state.is_over_turn_limit()
+
+
+# ── Scenario Loader ───────────────────────────────────────
+
+def test_scenario_loader():
+    scenarios = load_scenarios("scenarios")
+    assert len(scenarios) > 0
+
+
+def test_get_specific_scenario():
+    load_scenarios("scenarios")
+    scenario = get_scenario("paris-restaurant-01")
+    assert scenario is not None
+    assert scenario["target_language"] == "fr"
+
+
+def test_get_all_scenarios():
+    load_scenarios("scenarios")
+    all_scenarios = get_all_scenarios()
+    assert isinstance(all_scenarios, list)
+    assert len(all_scenarios) > 0

@@ -1,0 +1,21 @@
+scenario_id: paris-restaurant-01
+title: "Ordering Lunch in Paris"
+target_language: fr
+difficulty: beginner
+setting: >
+  A cozy bistro on a side street in the Marais district of Paris. It's lunchtime
+  and the restaurant is moderately busy. Checkered tablecloths, the smell of fresh
+  bread, and a chalkboard menu on the wall. You've just been seated at a small
+  table near the window.
+npc_role: "A friendly Parisian waiter named Pierre"
+npc_personality: "Warm and patient, speaks clearly, happy to help tourists"
+vocabulary_domain:
+  - food
+  - drinks
+  - restaurant
+  - ordering
+  - politeness
+max_turns: 15
+opening_line: "Bonjour et bienvenue! Je m'appelle Pierre. Voici le menu. Qu'est-ce que je peux vous servir aujourd'hui?"
+success_criteria: "Successfully order a main dish, a drink, and ask for the bill"
+voice_id: ""

@@ -1,0 +1,9 @@
+[project]
+name = "language-roleplayer"
+version = "1.0.0"
+description = "Voice-to-voice AI agent for language immersion roleplay"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
