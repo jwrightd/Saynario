@@ -12,6 +12,7 @@ import ScenarioBrowser from './pages/ScenarioBrowser';
 import ConversationPage from './pages/ConversationPage';
 import CreateScenarioPage from './pages/CreateScenarioPage';
 import VocabBankPage from './pages/VocabBankPage';
+import HistoryPage from './pages/HistoryPage';
 import { getStreak, getXP } from './utils/storage';
 
 /**
@@ -130,6 +131,7 @@ function Masthead() {
             {navLink('/', 'Destinations')}
             {navLink('/create', 'Compose')}
             {navLink('/vocab', 'Lexicon')}
+            {navLink('/history', 'Archive')}
           </Group>
 
           <Group gap="sm" wrap="nowrap" align="center">
@@ -155,6 +157,7 @@ function Masthead() {
           {navLink('/', 'Destinations')}
           {navLink('/create', 'Compose')}
           {navLink('/vocab', 'Lexicon')}
+          {navLink('/history', 'Archive')}
         </Group>
       </Container>
     </Box>
@@ -233,6 +236,7 @@ function AppContent() {
               <Route path="/" element={<ScenarioBrowser />} />
               <Route path="/create" element={<CreateScenarioPage />} />
               <Route path="/vocab" element={<VocabBankPage />} />
+              <Route path="/history" element={<HistoryPage />} />
             </Routes>
           </Container>
         )}

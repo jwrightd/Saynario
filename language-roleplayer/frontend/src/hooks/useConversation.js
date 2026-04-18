@@ -5,7 +5,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createConversationSocket } from '../utils/api';
-import { addVocabHints } from '../utils/storage';
+import { addVocabHints, saveSessionRecord } from '../utils/storage';
 
 export default function useConversation(sessionId) {
   const [messages, setMessages] = useState([]);
@@ -26,6 +26,9 @@ export default function useConversation(sessionId) {
   const audioQueueRef = useRef([]);  // { seq, audio } objects
   const isPlayingRef = useRef(false);
   const npcBufferRef = useRef('');
+  const messagesRef = useRef([]);
+  const scenarioInfoRef = useRef(null);
+  const sessionSavedRef = useRef(false);
 
   // ── Audio playback — sequential queue, ordered by seq ──────────────────────
   const playNextAudio = useCallback(() => {
@@ -65,6 +68,8 @@ export default function useConversation(sessionId) {
 
     switch (type) {
       case 'session_started':
+        scenarioInfoRef.current = data.scenario;
+        sessionSavedRef.current = false;
         setScenarioInfo(data.scenario);
         if (data.scenario?.difficulty) {
           setDifficultyMode(
@@ -138,6 +143,20 @@ export default function useConversation(sessionId) {
         break;
 
       case 'evaluation':
+        if (!sessionSavedRef.current) {
+          sessionSavedRef.current = true;
+          const si = scenarioInfoRef.current;
+          saveSessionRecord({
+            id: `session_${Date.now()}`,
+            scenarioTitle: si?.title || 'Conversation',
+            language: si?.target_language || 'fr',
+            difficulty: si?.difficulty || 'beginner',
+            completedAt: new Date().toISOString(),
+            evaluation: data.report,
+            transcript: messagesRef.current.filter((m) => !m.streaming),
+            scenarioInfo: si,
+          });
+        }
         setEvaluation(data.report);
         setIsProcessing(false);
         break;
@@ -249,6 +268,11 @@ export default function useConversation(sessionId) {
       wsRef.current = null;
     }
   }, []);
+
+  // Keep messagesRef current so the evaluation handler can read the full transcript
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Auto-connect when sessionId is set
   useEffect(() => {

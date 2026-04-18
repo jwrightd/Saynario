@@ -9,6 +9,7 @@ const KEYS = {
   VOCAB_BANK: "lr_vocab_bank",
   LAST_SESSION_DATE: "lr_last_session_date",
   CUSTOM_SCENARIOS: "lr_custom_scenarios",
+  SESSION_HISTORY: "lr_session_history",
 };
 
 // ── Streak & XP ─────────────────────────────────────────────────────────────
@@ -168,5 +169,36 @@ export function deleteCustomScenario(id) {
   try {
     const scenarios = getCustomScenarios().filter((s) => s.id !== id);
     localStorage.setItem(KEYS.CUSTOM_SCENARIOS, JSON.stringify(scenarios));
+  } catch {}
+}
+
+// ── Session History ──────────────────────────────────────────────────────────
+
+/**
+ * Returns the last 50 completed session records, newest first.
+ * Each record: { id, scenarioTitle, language, difficulty, completedAt, evaluation, transcript, scenarioInfo }
+ */
+export function getSessionHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(KEYS.SESSION_HISTORY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+/** Saves a completed session record (prepends, keeps last 50). */
+export function saveSessionRecord(record) {
+  try {
+    const history = getSessionHistory();
+    const updated = [record, ...history].slice(0, 50);
+    localStorage.setItem(KEYS.SESSION_HISTORY, JSON.stringify(updated));
+  } catch {}
+}
+
+/** Deletes a session record by id. */
+export function deleteSessionRecord(id) {
+  try {
+    const history = getSessionHistory().filter((s) => s.id !== id);
+    localStorage.setItem(KEYS.SESSION_HISTORY, JSON.stringify(history));
   } catch {}
 }

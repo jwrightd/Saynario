@@ -265,7 +265,7 @@ function SectionHead({ kicker, title }) {
   );
 }
 
-function EvaluationContent({ report, scenarioInfo, sessionResult, onNewSession }) {
+export function EvaluationContent({ report, scenarioInfo, sessionResult, onNewSession, innerScroll = true }) {
   const overall = Math.round(report.overall_score || 0);
   const vocab = Math.round(report.vocabulary_score || 0);
   const naturalness = Math.round(report.naturalness_score || 0);
@@ -437,10 +437,7 @@ function EvaluationContent({ report, scenarioInfo, sessionResult, onNewSession }
         px={{ base: 'lg', sm: 40 }}
         py={32}
         gap={40}
-        style={{
-          maxHeight: 'min(56vh, 520px)',
-          overflowY: 'auto',
-        }}
+        style={innerScroll ? { maxHeight: 'min(56vh, 520px)', overflowY: 'auto' } : undefined}
       >
         {report.grammar_errors?.length > 0 && (
           <Box>
