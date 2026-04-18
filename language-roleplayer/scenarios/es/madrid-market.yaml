@@ -17,4 +17,4 @@ vocabulary_domain:
 max_turns: 15
 opening_line: "Hola, buenos dias! Bienvenido al mercado. Tenemos frutas muy frescas hoy. Que le puedo ofrecer?"
 success_criteria: "Successfully purchase at least two items, ask about prices, and understand the total"
-voice_id: ""
+voice_id: "htFfPSZGJwjBv1CL0aMD"

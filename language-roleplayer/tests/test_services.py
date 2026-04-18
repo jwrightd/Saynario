@@ -1,6 +1,8 @@
 """Tests for the core service modules."""
 
 import os
+from types import SimpleNamespace
+
 import pytest
 
 # Force mock mode
@@ -13,7 +15,7 @@ from app.services.stt import (
     prepare_audio_for_transcription,
 )
 from app.services.llm import create_llm_service, MockLLMService, LLMService
-from app.services.tts import create_tts_service, MockTTSService
+from app.services.tts import create_tts_service, MockTTSService, TTSService
 from app.services.vad import create_vad_service, MockVADService
 from app.services.evaluation import create_evaluation_service, MockEvaluationService
 from app.services.session_manager import SessionManager
@@ -139,6 +141,75 @@ async def test_mock_tts_streaming():
     async for chunk in tts.stream_synthesis("Hola", "es"):
         chunks.append(chunk)
     assert len(chunks) > 0
+
+
+@pytest.mark.asyncio
+async def test_tts_synthesize_falls_back_to_default_voice():
+    attempts = []
+
+    async def fake_stream(**kwargs):
+        attempts.append(kwargs["voice_id"])
+        if kwargs["voice_id"] == "custom-voice":
+            raise RuntimeError("voice unavailable")
+        yield b"fallback-audio"
+
+    tts = TTSService.__new__(TTSService)
+    tts.client = SimpleNamespace(text_to_speech=SimpleNamespace(stream=fake_stream))
+    tts.model = "test-model"
+    tts.output_format = "mp3_44100_128"
+    tts.global_fallback_voice_id = ""
+
+    audio = await tts.synthesize("Hola", "es", "custom-voice")
+
+    assert audio == b"fallback-audio"
+    assert attempts == ["custom-voice", "jBpfuIE2acCO8z3wKNLl"]
+
+
+@pytest.mark.asyncio
+async def test_tts_stream_synthesis_falls_back_to_default_voice():
+    attempts = []
+
+    async def fake_stream(**kwargs):
+        attempts.append(kwargs["voice_id"])
+        if kwargs["voice_id"] == "custom-voice":
+            raise RuntimeError("voice unavailable")
+        yield b"chunk-1"
+        yield b"chunk-2"
+
+    tts = TTSService.__new__(TTSService)
+    tts.client = SimpleNamespace(text_to_speech=SimpleNamespace(stream=fake_stream))
+    tts.model = "test-model"
+    tts.output_format = "mp3_44100_128"
+    tts.global_fallback_voice_id = ""
+
+    chunks = []
+    async for chunk in tts.stream_synthesis("Hola", "es", "custom-voice"):
+        chunks.append(chunk)
+
+    assert chunks == [b"chunk-1", b"chunk-2"]
+    assert attempts == ["custom-voice", "jBpfuIE2acCO8z3wKNLl"]
+
+
+@pytest.mark.asyncio
+async def test_tts_prefers_global_fallback_voice_when_configured():
+    attempts = []
+
+    async def fake_stream(**kwargs):
+        attempts.append(kwargs["voice_id"])
+        if kwargs["voice_id"] == "custom-voice":
+            raise RuntimeError("voice unavailable")
+        yield b"fallback-audio"
+
+    tts = TTSService.__new__(TTSService)
+    tts.client = SimpleNamespace(text_to_speech=SimpleNamespace(stream=fake_stream))
+    tts.model = "test-model"
+    tts.output_format = "mp3_44100_128"
+    tts.global_fallback_voice_id = "global-safe-voice"
+
+    audio = await tts.synthesize("Hola", "es", "custom-voice")
+
+    assert audio == b"fallback-audio"
+    assert attempts == ["custom-voice", "global-safe-voice"]
 
 
 # ── Mock VAD ──────────────────────────────────────────────

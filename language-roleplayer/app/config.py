@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # TTS
     elevenlabs_model: str = "eleven_multilingual_v2"
     tts_output_format: str = "mp3_44100_128"
+    elevenlabs_fallback_voice_id: str = ""
 
     # V2: Adaptive difficulty
     adaptive_difficulty_enabled: bool = True

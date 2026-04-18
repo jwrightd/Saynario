@@ -45,29 +45,59 @@ class TTSService:
         self.client = AsyncElevenLabs(api_key=settings.elevenlabs_api_key)
         self.model = settings.elevenlabs_model
         self.output_format = settings.tts_output_format
+        self.global_fallback_voice_id = settings.elevenlabs_fallback_voice_id
 
     def _get_voice_id(self, language: str, scenario_voice_id: str = "") -> str:
         if scenario_voice_id:
             return scenario_voice_id
         return DEFAULT_VOICES.get(language, DEFAULT_VOICES["fr"])
 
+    def _get_default_voice_id(self, language: str) -> str:
+        if self.global_fallback_voice_id:
+            return self.global_fallback_voice_id
+        return DEFAULT_VOICES.get(language, DEFAULT_VOICES["fr"])
+
+    async def _stream_request(self, text: str, voice_id: str):
+        async for chunk in self.client.text_to_speech.stream(
+            voice_id=voice_id,
+            text=text,
+            model_id=self.model,
+            output_format=self.output_format,
+            optimize_streaming_latency=4,
+        ):
+            if chunk:
+                yield chunk
+
     async def synthesize(self, text: str, language: str = "fr", voice_id: str = "") -> bytes:
         """Synthesize full audio from text (collects all streamed chunks)."""
-        vid = self._get_voice_id(language, voice_id)
-        audio_bytes = b""
+        requested_voice_id = self._get_voice_id(language, voice_id)
+        default_voice_id = self._get_default_voice_id(language)
+
         try:
-            async for chunk in self.client.text_to_speech.stream(
-                voice_id=vid,
-                text=text,
-                model_id=self.model,
-                output_format=self.output_format,
-                optimize_streaming_latency=4,
-            ):
-                if chunk:
-                    audio_bytes += chunk
+            audio_bytes = b""
+            async for chunk in self._stream_request(text, requested_voice_id):
+                audio_bytes += chunk
             logger.info(f"TTS synthesized {len(audio_bytes)} bytes for {language}")
             return audio_bytes
         except Exception as e:
+            if voice_id and requested_voice_id != default_voice_id:
+                logger.warning(
+                    "ElevenLabs voice %s failed for %s; retrying with default voice %s. Error: %s",
+                    requested_voice_id,
+                    language,
+                    default_voice_id,
+                    e,
+                )
+                audio_bytes = b""
+                async for chunk in self._stream_request(text, default_voice_id):
+                    audio_bytes += chunk
+                logger.info(
+                    "TTS synthesized %s bytes for %s using fallback voice",
+                    len(audio_bytes),
+                    language,
+                )
+                return audio_bytes
+
             logger.error(f"ElevenLabs API error: {e}")
             raise
 
@@ -78,18 +108,25 @@ class TTSService:
 
         Uses optimize_streaming_latency=4 for minimum first-chunk latency.
         """
-        vid = self._get_voice_id(language, voice_id)
+        requested_voice_id = self._get_voice_id(language, voice_id)
+        default_voice_id = self._get_default_voice_id(language)
+
         try:
-            async for chunk in self.client.text_to_speech.stream(
-                voice_id=vid,
-                text=text,
-                model_id=self.model,
-                output_format=self.output_format,
-                optimize_streaming_latency=4,
-            ):
-                if chunk:
-                    yield chunk
+            async for chunk in self._stream_request(text, requested_voice_id):
+                yield chunk
         except Exception as e:
+            if voice_id and requested_voice_id != default_voice_id:
+                logger.warning(
+                    "ElevenLabs streaming voice %s failed for %s; retrying with default voice %s. Error: %s",
+                    requested_voice_id,
+                    language,
+                    default_voice_id,
+                    e,
+                )
+                async for chunk in self._stream_request(text, default_voice_id):
+                    yield chunk
+                return
+
             logger.error(f"ElevenLabs streaming error: {e}")
             raise
 

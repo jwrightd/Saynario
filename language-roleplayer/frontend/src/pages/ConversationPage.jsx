@@ -3,13 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ActionIcon,
   Alert,
-  Badge,
   Box,
   Burger,
   Button,
   Drawer,
   Group,
-  Paper,
   Progress,
   ScrollArea,
   SegmentedControl,
@@ -22,57 +20,182 @@ import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import useConversation from '../hooks/useConversation';
 import useAudioRecorder from '../hooks/useAudioRecorder';
 import EvaluationReport from '../components/EvaluationReport';
+import { scenarioScene, scenarioMoodName } from '../utils/scenarioBanner';
 
-const LANG_FLAGS = {
-  en: '🇬🇧', fr: '🇫🇷', es: '🇪🇸', de: '🇩🇪', ja: '🇯🇵',
-  zh: '🇨🇳', it: '🇮🇹', pt: '🇧🇷', ko: '🇰🇷',
+const LANG_CITIES = {
+  en: 'London', fr: 'Paris', es: 'Seville', de: 'Berlin',
+  ja: 'Kyoto', zh: 'Shanghai', it: 'Rome', pt: 'Lisbon', ko: 'Seoul',
 };
 
-const DIFF_LABELS = {
-  support: { label: 'Support', color: '#1ABC9C' },
-  natural: { label: 'Natural', color: '#2E86C1' },
-  challenge: { label: 'Challenge', color: '#F0A500' },
+const LANG_CODES = {
+  en: 'EN', fr: 'FR', es: 'ES', de: 'DE', ja: 'JA',
+  zh: 'ZH', it: 'IT', pt: 'PT', ko: 'KO',
+};
+
+const TEMPO_META = {
+  support:   { label: 'Gentle',    hint: 'supportive pace' },
+  natural:   { label: 'Measured',  hint: 'natural pace' },
+  challenge: { label: 'Immersive', hint: 'challenging pace' },
 };
 
 const CORRECTION_OPTIONS = [
-  { value: 'off', label: 'Off' },
+  { value: 'off',    label: 'Off' },
   { value: 'gentle', label: 'Gentle' },
   { value: 'strict', label: 'Strict' },
 ];
 
-function CorrectionHint({ mode }) {
-  if (mode === 'off') return <Text fz="xs" c="dimmed">NPC ignores errors — full immersion.</Text>;
-  if (mode === 'gentle') return <Text fz="xs" c="dimmed">NPC echoes correct forms naturally.</Text>;
-  return <Text fz="xs" c="dimmed">NPC flags errors before responding.</Text>;
+function formatRoleWithArticle(role) {
+  if (!role) return role;
+  const trimmed = role.trim();
+  if (!trimmed) return trimmed;
+
+  const articleMatch = trimmed.match(/^(A|An|The)(\s+)(.+)/);
+  if (articleMatch) {
+    return articleMatch[1].toLowerCase() + articleMatch[2] + articleMatch[3];
+  }
+
+  const words = trimmed.split(/\s+/);
+  const looksLikeProperName =
+    words.length === 1 && /^[A-Z][a-z'’\-]+$/.test(words[0]);
+  if (looksLikeProperName) return trimmed;
+
+  const firstChar = trimmed.charAt(0).toLowerCase();
+  const article = 'aeiou'.includes(firstChar) ? 'an' : 'a';
+  return `${article} ${trimmed}`;
 }
 
-function VocabHintTypeBadge({ type }) {
-  const color = type === 'verb' ? 'teal' : type === 'phrase' ? 'gold' : type === 'adjective' ? 'violet' : 'blue';
+function extractNpcDisplayName(role) {
+  if (!role) return role;
+  const trimmed = role.trim();
+  if (!trimmed) return trimmed;
+
+  const namedMatch = trimmed.match(/\b(?:named|called)\s+(.+)$/i);
+  if (namedMatch) {
+    return namedMatch[1].trim();
+  }
+
+  return trimmed;
+}
+
+function Eyebrow({ children, c = 'ink.6', ...rest }) {
   return (
-    <Badge size="xs" variant="light" color={color} tt="uppercase" style={{ flexShrink: 0 }}>
-      {type}
-    </Badge>
+    <Text
+      fz={10}
+      fw={700}
+      c={c}
+      style={{ letterSpacing: '0.22em', textTransform: 'uppercase' }}
+      {...rest}
+    >
+      {children}
+    </Text>
   );
 }
 
-function ConversationSidebar({
+function CorrectionHint({ mode }) {
+  const copy =
+    mode === 'off'
+      ? 'Your companion ignores errors. Full immersion.'
+      : mode === 'gentle'
+        ? 'Your companion echoes the correct form, gently.'
+        : 'Your companion pauses to flag errors before continuing.';
+  return (
+    <Text fz="xs" c="ink.6" style={{ lineHeight: 1.55 }}>
+      {copy}
+    </Text>
+  );
+}
+
+function VocabHintTypeMark({ type }) {
+  return (
+    <Text
+      fz={9}
+      fw={700}
+      px={6}
+      py={2}
+      style={{
+        letterSpacing: '0.18em',
+        textTransform: 'uppercase',
+        border: '1px solid var(--sny-hairline)',
+        color: 'var(--sny-ink-soft)',
+        background: 'var(--sny-paper)',
+        flexShrink: 0,
+      }}
+    >
+      {type}
+    </Text>
+  );
+}
+
+function ScenePanel({
   correctionMode,
   setCorrectionMode,
   isConnected,
   turnCount,
   maxTurns,
   vocabHints,
-  npcName,
+  tempo,
   requestHint,
   endSession,
   isProcessing,
+  city,
+  moodName,
+  npcLabel,
+  title,
 }) {
+  const pct = Math.min((turnCount / maxTurns) * 100, 100);
   return (
-    <Stack gap="lg" p={{ base: 'md', md: 0 }}>
-      <div>
-        <Text tt="uppercase" fz={10} fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.07em' }}>
-          Correction mode
+    <Stack gap={28} p={{ base: 'md', md: 'lg' }}>
+      {/* Scene header inside the panel */}
+      <Stack gap={6}>
+        <Eyebrow c="clay.6">{city ? `The scene · ${city}` : 'The scene'}</Eyebrow>
+        <Text
+          className="sny-serif"
+          fz={26}
+          fw={500}
+          c="ink.8"
+          style={{ lineHeight: 1.1, letterSpacing: '-0.01em' }}
+        >
+          {title || 'A quiet encounter.'}
         </Text>
+        {npcLabel && (
+          <Text fz="sm" fs="italic" c="ink.6" className="sny-serif" fw={500}>
+            with {npcLabel}
+          </Text>
+        )}
+        {moodName && (
+          <Text fz={10} c="ink.5" style={{ letterSpacing: '0.16em', textTransform: 'uppercase' }}>
+            {moodName}
+          </Text>
+        )}
+      </Stack>
+
+      {/* Progress ledger */}
+      <Box>
+        <Group justify="space-between" mb={8}>
+          <Eyebrow>Act of conversation</Eyebrow>
+          <Text fz="xs" c="ink.6" style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {turnCount} / {maxTurns}
+          </Text>
+        </Group>
+        <Progress
+          value={pct}
+          color="clay.5"
+          size={4}
+          radius={0}
+          styles={{
+            root: { background: 'var(--sny-paper-deep)' },
+          }}
+        />
+        {tempo && (
+          <Text fz={10} c="ink.5" mt={6} style={{ letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+            Tempo · {TEMPO_META[tempo]?.label || tempo}
+          </Text>
+        )}
+      </Box>
+
+      {/* Correction mode */}
+      <Box>
+        <Eyebrow mb={8}>Companion guidance</Eyebrow>
         <SegmentedControl
           fullWidth
           size="xs"
@@ -80,68 +203,123 @@ function ConversationSidebar({
           value={correctionMode}
           onChange={setCorrectionMode}
           disabled={!isConnected}
-          color="brand"
+          radius={0}
+          styles={{
+            root: {
+              background: 'var(--sny-paper)',
+              border: '1px solid var(--sny-hairline)',
+              padding: 2,
+            },
+            indicator: {
+              background: 'var(--sny-ink)',
+              boxShadow: 'none',
+              borderRadius: 0,
+            },
+            label: {
+              color: 'var(--sny-ink-soft)',
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+            },
+            labelActive: {
+              color: 'var(--sny-paper-highlight) !important',
+            },
+          }}
         />
-        <Box mt="xs">
+        <Box mt={8}>
           <CorrectionHint mode={correctionMode} />
         </Box>
-      </div>
+      </Box>
 
-      <div>
-        <Text tt="uppercase" fz={10} fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.07em' }}>
-          Progress
-        </Text>
-        <Progress value={Math.min((turnCount / maxTurns) * 100, 100)} color="teal" size="sm" radius="xl" />
-        <Text fz="xs" c="dimmed" mt={6}>
-          {turnCount} of {maxTurns} turns used
-        </Text>
-      </div>
-
+      {/* Vocab — study notes */}
       {vocabHints.length > 0 && (
-        <div>
-          <Text tt="uppercase" fz={10} fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.07em' }}>
-            Vocab hints
-          </Text>
-          <Stack gap={6}>
+        <Box>
+          <Eyebrow mb={8}>Useful phrases</Eyebrow>
+          <Stack
+            gap={2}
+            style={{
+              borderTop: '1px solid var(--sny-hairline)',
+            }}
+          >
             {vocabHints.map((h, i) => (
-              <Group key={i} gap={6} wrap="nowrap" align="center">
-                <Text fz="sm" fw={600} ff="'DM Sans', sans-serif" style={{ flexShrink: 0 }}>
+              <Group
+                key={i}
+                gap={10}
+                wrap="nowrap"
+                align="baseline"
+                py={10}
+                style={{ borderBottom: '1px solid var(--sny-hairline-soft)' }}
+              >
+                <Text
+                  fz="sm"
+                  fw={600}
+                  className="sny-serif"
+                  c="clay.7"
+                  style={{ flexShrink: 0 }}
+                >
                   {h.word}
                 </Text>
-                <Text fz="xs" c="dimmed">→</Text>
-                <Text fz="sm" c="dimmed" style={{ flex: 1 }} lineClamp={1}>
+                <Text fz="xs" c="ink.5" style={{ flexShrink: 0 }}>—</Text>
+                <Text fz="sm" c="ink.7" style={{ flex: 1, lineHeight: 1.4 }} lineClamp={1}>
                   {h.translation}
                 </Text>
-                <VocabHintTypeBadge type={h.type} />
+                <VocabHintTypeMark type={h.type} />
               </Group>
             ))}
           </Stack>
-        </div>
+        </Box>
       )}
 
-      <Stack gap="xs">
-        <Text tt="uppercase" fz={10} fw={700} c="dimmed" style={{ letterSpacing: '0.07em' }}>
-          Actions
-        </Text>
-        <Button variant="light" onClick={requestHint} disabled={!isConnected || isProcessing}>
-          Get hint
+      {/* Actions */}
+      <Stack gap={8}>
+        <Eyebrow>Actions</Eyebrow>
+        <Button
+          variant="default"
+          radius={0}
+          onClick={requestHint}
+          disabled={!isConnected || isProcessing}
+          styles={{
+            root: {
+              background: 'var(--sny-paper)',
+              border: '1px solid var(--sny-hairline)',
+              color: 'var(--sny-ink)',
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+            },
+          }}
+        >
+          Request a prompt
         </Button>
-        <Button color="red" variant="light" onClick={endSession} disabled={!isConnected || isProcessing}>
-          End session
+        <Button
+          variant="filled"
+          color="clay.6"
+          radius={0}
+          onClick={endSession}
+          disabled={!isConnected || isProcessing}
+          styles={{
+            root: {
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+            },
+          }}
+        >
+          Close the scene
         </Button>
       </Stack>
 
-      <Group gap="xs" mt="auto">
+      <Group gap="xs" mt="auto" align="center">
         <Box
-          w={8}
-          h={8}
+          w={6}
+          h={6}
           style={{
             borderRadius: '50%',
-            background: isConnected ? 'var(--mantine-color-teal-5)' : '#aaa',
-            boxShadow: isConnected ? '0 0 4px var(--mantine-color-teal-5)' : undefined,
+            background: isConnected ? 'var(--sny-olive)' : 'var(--sny-ink-mute)',
+            boxShadow: isConnected ? '0 0 0 3px rgba(110, 127, 70, 0.15)' : 'none',
           }}
         />
-        <Text fz="xs" c="dimmed">{isConnected ? 'Connected' : 'Connecting…'}</Text>
+        <Text fz="xs" c="ink.6">
+          {isConnected ? 'Line open' : 'Opening the line…'}
+        </Text>
       </Group>
     </Stack>
   );
@@ -202,23 +380,31 @@ export default function ConversationPage() {
   }
 
   const lang = scenarioInfo?.target_language || 'fr';
-  const flag = LANG_FLAGS[lang] || '🌐';
-  const npcName = scenarioInfo?.npc_role || 'NPC';
-  const diff = DIFF_LABELS[difficultyMode] || DIFF_LABELS.natural;
+  const langCode = LANG_CODES[lang] || '··';
+  const city = LANG_CITIES[lang] || 'Atelier';
+  const moodName = scenarioMoodName(lang);
+  const sceneBg = scenarioScene(lang);
+  const npcRole = scenarioInfo?.npc_role || 'your companion';
+  const npcLabel = formatRoleWithArticle(npcRole);
+  const npcDisplayName = extractNpcDisplayName(npcRole) || npcLabel;
   const turnCount = messages.filter((m) => m.role === 'user').length;
   const maxTurns = scenarioInfo?.max_turns || 20;
 
-  const sidebarProps = {
+  const panelProps = {
     correctionMode,
     setCorrectionMode,
     isConnected,
     turnCount,
     maxTurns,
     vocabHints,
-    npcName,
+    tempo: difficultyMode,
+    npcLabel,
     requestHint,
     endSession,
     isProcessing,
+    city,
+    moodName,
+    title: scenarioInfo?.title,
   };
 
   if (evaluation) {
@@ -233,103 +419,216 @@ export default function ConversationPage() {
 
   return (
     <Box
-      component="div"
       mih="100vh"
-      display="flex"
-      style={{ flexDirection: 'column' }}
-      bg="gray.1"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--sny-paper)',
+      }}
     >
-      <Group
-        justify="space-between"
-        wrap="nowrap"
-        px="md"
-        py="sm"
-        bg="brand.9"
-        c="white"
+      {/* ── Immersive scene header ─────────────────────────────────────── */}
+      <Box
         style={{
-          minHeight: 60,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          position: 'relative',
+          borderBottom: '1px solid var(--sny-hairline)',
+          backgroundColor: 'var(--sny-paper-deep)',
+          backgroundImage: sceneBg,
+          overflow: 'hidden',
           flexShrink: 0,
         }}
       >
-        <Group gap="sm" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-          {isMobile && (
-            <Burger opened={drawerOpened} onClick={drawerOpened ? closeDrawer : openDrawer} size="sm" color="white" aria-label="Open menu" />
-          )}
-          <Button variant="subtle" color="gray" c="white" size="compact-sm" onClick={() => navigate('/')}>
-            ← Exit
-          </Button>
-          <Box style={{ flex: 1, minWidth: 0 }}>
-            <Group gap="xs" wrap="nowrap" align="center">
-              <Text span fz="lg" style={{ flexShrink: 0 }}>{flag}</Text>
-              <Text fw={700} fz="sm" lineClamp={1} style={{ flex: 1 }}>
-                {scenarioInfo?.title || 'Connecting…'}
-              </Text>
-            </Group>
-            <Text fz="xs" c="rgba(255,255,255,0.6)" lineClamp={1}>
-              {npcName}
+        {/* Film grain overlay */}
+        <Box
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='8'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.12 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
+            mixBlendMode: 'overlay',
+            opacity: 0.65,
+            pointerEvents: 'none',
+          }}
+        />
+
+        <Group
+          justify="space-between"
+          wrap="nowrap"
+          px={{ base: 'md', md: 'lg' }}
+          py="md"
+          align="center"
+          style={{ position: 'relative' }}
+        >
+          <Group gap="sm" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+            {isMobile && (
+              <Burger
+                opened={drawerOpened}
+                onClick={drawerOpened ? closeDrawer : openDrawer}
+                size="sm"
+                color="var(--sny-ink)"
+                aria-label="Open menu"
+              />
+            )}
+            <UnstyledButton
+              onClick={() => navigate('/')}
+              style={{
+                color: 'var(--sny-ink-soft)',
+                fontSize: 12,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                fontWeight: 600,
+                padding: '4px 8px',
+                border: '1px solid var(--sny-hairline)',
+                background: 'rgba(251, 247, 240, 0.75)',
+              }}
+            >
+              ← Exit scene
+            </UnstyledButton>
+          </Group>
+
+          <Box
+            visibleFrom="sm"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              maxWidth: '60%',
+            }}
+          >
+            <Text
+              fz={10}
+              fw={700}
+              c="ink.7"
+              style={{ letterSpacing: '0.3em', textTransform: 'uppercase' }}
+            >
+              · {city} · {langCode} ·
+            </Text>
+            <Text
+              className="sny-serif"
+              fz={{ base: 18, md: 22 }}
+              c="ink.8"
+              lineClamp={1}
+              mt={2}
+              style={{ letterSpacing: '-0.01em', lineHeight: 1.2 }}
+            >
+              {scenarioInfo?.title || 'Connecting to the scene…'}
+            </Text>
+            <Text fz={11} c="ink.6" fs="italic" className="sny-serif" lineClamp={1} mt={2}>
+              with {npcLabel}
             </Text>
           </Box>
+
+          <Group gap="sm" wrap="nowrap">
+            <Text
+              fz={10}
+              fw={600}
+              c="ink.6"
+              style={{
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {turnCount}/{maxTurns}
+            </Text>
+          </Group>
         </Group>
 
-        <Group gap="md" wrap="nowrap" visibleFrom="sm" style={{ flexShrink: 0 }}>
+        {/* Mobile stacked title */}
+        <Box hiddenFrom="sm" px="md" pb="sm" style={{ position: 'relative' }}>
           <Text
-            fz="xs"
+            fz={10}
             fw={700}
-            px="sm"
-            py={4}
-            style={{ borderRadius: 20, border: `1.5px solid ${diff.color}`, color: diff.color }}
+            c="ink.7"
+            style={{ letterSpacing: '0.28em', textTransform: 'uppercase' }}
           >
-            {diff.label}
+            {city} · {langCode}
           </Text>
-          <Text fz="xs" c="rgba(255,255,255,0.65)">
-            {turnCount}/{maxTurns} turns
+          <Text
+            className="sny-serif"
+            fz={18}
+            c="ink.8"
+            lineClamp={1}
+            style={{ lineHeight: 1.15 }}
+          >
+            {scenarioInfo?.title || 'Connecting…'}
           </Text>
-        </Group>
-      </Group>
+          <Text fz={11} c="ink.6" fs="italic" className="sny-serif" lineClamp={1}>
+            with {npcLabel}
+          </Text>
+        </Box>
+      </Box>
 
+      {/* Adaptive tempo message — a gentle marginal note */}
       {difficultyMessage && (
-        <Paper
+        <Box
           mx="auto"
-          mt="sm"
+          mt={12}
           px="lg"
-          py="xs"
-          radius="xl"
-          bg="brand.9"
-          c="white"
-          shadow="md"
-          maw="90%"
+          py={8}
+          maw="92%"
+          className="sny-anim-fade-in"
+          style={{
+            background: 'var(--sny-ink)',
+            color: 'var(--sny-paper-highlight)',
+            border: '1px solid var(--sny-ink)',
+            boxShadow: 'var(--mantine-shadow-md)',
+          }}
         >
-          <Text fz="sm" fw={600} ta="center">
-            🎯 {difficultyMessage}
+          <Text fz="sm" fw={500} ta="center" className="sny-serif" fs="italic">
+            {difficultyMessage}
           </Text>
-        </Paper>
+        </Box>
       )}
 
+      {/* Mobile drawer */}
       <Drawer
         opened={drawerOpened && !!isMobile}
         onClose={closeDrawer}
-        title="Session"
+        title={
+          <Text
+            fz={10}
+            fw={700}
+            c="clay.6"
+            style={{ letterSpacing: '0.22em', textTransform: 'uppercase' }}
+          >
+            Scene notes
+          </Text>
+        }
         position="left"
-        size="85%"
-        padding="md"
+        size="88%"
+        padding={0}
         zIndex={400}
+        styles={{
+          content: { background: 'var(--sny-paper-highlight)' },
+          header: { background: 'var(--sny-paper-highlight)', borderBottom: '1px solid var(--sny-hairline)' },
+          body: { padding: 0 },
+        }}
       >
-        <ConversationSidebar {...sidebarProps} />
+        <ScenePanel {...panelProps} />
       </Drawer>
 
-      <Group align="stretch" gap={0} wrap="nowrap" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      {/* ── Main layout: side panel + conversation ───────────────────── */}
+      <Group
+        align="stretch"
+        gap={0}
+        wrap="nowrap"
+        style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}
+      >
         {!isMobile && (
-          <Paper
-            w={280}
-            miw={260}
-            radius={0}
-            withBorder
-            p="md"
-            style={{ borderTop: 0, borderBottom: 0, borderLeft: 0, flexShrink: 0, overflowY: 'auto' }}
+          <Box
+            w={320}
+            miw={280}
+            style={{
+              flexShrink: 0,
+              borderRight: '1px solid var(--sny-hairline)',
+              background: 'var(--sny-paper-highlight)',
+              overflowY: 'auto',
+            }}
           >
-            <ConversationSidebar {...sidebarProps} />
-          </Paper>
+            <ScenePanel {...panelProps} />
+          </Box>
         )}
 
         <Stack gap={0} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
@@ -337,164 +636,335 @@ export default function ConversationPage() {
             viewportRef={transcriptViewport}
             type="auto"
             style={{ flex: 1, minHeight: 0 }}
-            p="lg"
             offsetScrollbars
           >
-            <Stack gap="md" align="stretch">
-              {messages.length === 0 && (
-                <Stack align="center" py={48} gap="sm">
-                  <Text fz="3rem">{flag}</Text>
-                  <Text c="dimmed" fz="sm">Your conversation will appear here.</Text>
-                </Stack>
-              )}
-
-              {messages.map((msg, i) => (
-                <Stack
-                  key={i}
-                  gap={4}
-                  align={msg.role === 'user' ? 'flex-end' : msg.role === 'system' ? 'center' : 'flex-start'}
-                  maw={msg.role === 'system' ? '90%' : '72%'}
-                  alignSelf={msg.role === 'user' ? 'flex-end' : msg.role === 'system' ? 'center' : 'flex-start'}
-                  style={{ opacity: msg.streaming ? 0.85 : 1 }}
-                >
-                  {msg.role !== 'system' && (
-                    <Text tt="uppercase" fz={10} fw={600} c="dimmed" ta={msg.role === 'user' ? 'right' : 'left'}>
-                      {msg.role === 'npc' ? npcName : 'You'}
-                    </Text>
-                  )}
-                  <Paper
-                    px="md"
-                    py="sm"
-                    radius="md"
-                    shadow="xs"
-                    withBorder={msg.role === 'npc'}
-                    bg={msg.role === 'user' ? 'brand.5' : msg.role === 'system' ? 'gray.1' : 'white'}
-                    c={msg.role === 'user' ? 'white' : msg.role === 'system' ? 'dimmed' : undefined}
-                    style={{
-                      borderBottomRightRadius: msg.role === 'user' ? 4 : undefined,
-                      borderBottomLeftRadius: msg.role === 'npc' ? 4 : undefined,
-                      fontStyle: msg.role === 'system' ? 'italic' : undefined,
-                      fontSize: msg.role === 'system' ? '0.82rem' : '0.9rem',
-                    }}
+            <Box
+              mx="auto"
+              maw={760}
+              px={{ base: 'md', md: 'xl' }}
+              py={{ base: 'lg', md: 40 }}
+            >
+              {messages.length === 0 && !isProcessing && (
+                <Stack align="center" py={60} gap="xs">
+                  <Text
+                    fz={10}
+                    fw={700}
+                    c="clay.6"
+                    style={{ letterSpacing: '0.28em', textTransform: 'uppercase' }}
                   >
-                    <Text fz="inherit" style={{ lineHeight: 1.5 }} ff={msg.role === 'npc' || msg.role === 'user' ? "'DM Sans', sans-serif" : undefined}>
-                      {msg.text}
-                    </Text>
-                  </Paper>
+                    Stage set
+                  </Text>
+                  <Text
+                    className="sny-serif"
+                    fz={28}
+                    fs="italic"
+                    c="ink.7"
+                    ta="center"
+                  >
+                    A hush before the dialogue begins.
+                  </Text>
+                  <Text fz="sm" c="ink.6" ta="center" maw={360} mt="xs" style={{ lineHeight: 1.6 }}>
+                    When you are ready, press the microphone and speak. Your
+                    companion is listening.
+                  </Text>
                 </Stack>
-              ))}
-
-              {isProcessing && (
-                <Group gap={6} align="center" px="md" py="sm" alignSelf="flex-start">
-                  {[0, 1, 2].map((d) => (
-                    <Box
-                      key={d}
-                      className={`thinking-dot thinking-dot-${d}`}
-                      w={7}
-                      h={7}
-                      bg="brand.5"
-                      style={{ borderRadius: '50%' }}
-                    />
-                  ))}
-                </Group>
               )}
-            </Stack>
+
+              <Stack gap={22}>
+                {messages.map((msg, i) => (
+                  <MessageLine
+                    key={i}
+                    msg={msg}
+                    npcName={npcDisplayName}
+                  />
+                ))}
+
+                {isProcessing && (
+                  <Group gap={8} align="center" py="xs" className="sny-anim-fade-in">
+                    <Box className="sny-dot sny-dot--0" />
+                    <Box className="sny-dot sny-dot--1" />
+                    <Box className="sny-dot sny-dot--2" />
+                    <Text fz={11} c="ink.6" ml={4} style={{ letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                      Composing a reply
+                    </Text>
+                  </Group>
+                )}
+              </Stack>
+            </Box>
           </ScrollArea>
 
           {isNpcSpeaking && (
-            <Group px="lg" py="xs" bg="gray.2" style={{ borderTop: '1px solid var(--mantine-color-gray-3)' }} gap="xs">
-              <Text fz="sm" c="brand.7">🔊 {npcName} is speaking…</Text>
-            </Group>
+            <Box
+              px="lg"
+              py={10}
+              style={{
+                background: 'var(--sny-paper-highlight)',
+                borderTop: '1px solid var(--sny-hairline)',
+              }}
+            >
+              <Group gap="xs" align="center">
+                <Box
+                  w={6}
+                  h={6}
+                  style={{
+                    borderRadius: '50%',
+                    background: 'var(--sny-clay)',
+                    animation: 'sny-listening 1.6s ease-in-out infinite',
+                  }}
+                />
+                <Text fz={11} c="ink.7" style={{ letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                  {npcDisplayName} is speaking
+                </Text>
+              </Group>
+            </Box>
           )}
 
           {(error || micError) && (
-            <Alert color="red" mx="md" mb={0} title="Error">
+            <Alert
+              color="clay"
+              mx="md"
+              my={8}
+              radius={0}
+              styles={{
+                root: {
+                  background: 'rgba(193, 87, 63, 0.08)',
+                  border: '1px solid rgba(193, 87, 63, 0.35)',
+                },
+                title: { color: 'var(--sny-clay-deep)' },
+              }}
+              title="A small interruption"
+            >
               {error || micError}
             </Alert>
           )}
 
-          <Group
-            p="md"
-            align="center"
-            wrap="nowrap"
-            gap="md"
-            bg="white"
-            style={{ borderTop: '1px solid var(--mantine-color-gray-3)', flexShrink: 0 }}
+          {/* Voice + text input — mic is the center of gravity. */}
+          <Box
+            style={{
+              borderTop: '1px solid var(--sny-hairline)',
+              background: 'var(--sny-paper-highlight)',
+              flexShrink: 0,
+            }}
           >
-            <UnstyledButton
-              onClick={handleMicToggle}
-              disabled={!isConnected || isNpcSpeaking}
-              w={72}
-              h={72}
-              style={{
-                borderRadius: '50%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-                cursor: (!isConnected || isNpcSpeaking) ? 'not-allowed' : 'pointer',
-                opacity: (!isConnected || isNpcSpeaking) ? 0.5 : 1,
-                background: isRecording
-                  ? 'var(--mantine-color-red-6)'
-                  : 'var(--mantine-color-brand-filled)',
-                color: 'white',
-                boxShadow: isRecording
-                  ? '0 0 0 0 rgba(231,76,60,0.5)'
-                  : '0 4px 14px rgba(46,134,193,0.4)',
-                animation: isRecording ? 'micPulse 1.2s ease-in-out infinite' : undefined,
-              }}
-            >
-              <Text fz="xl" c="inherit">🎙️</Text>
-              <Text fz={10} fw={600} c="inherit">{isRecording ? 'Listening…' : 'Speak'}</Text>
-            </UnstyledButton>
+            <Box px={{ base: 'md', md: 'xl' }} py="lg">
+              <Stack gap="md" maw={760} mx="auto">
+                <Group align="center" justify="center" gap="lg" wrap="nowrap">
+                  <UnstyledButton
+                    onClick={handleMicToggle}
+                    disabled={!isConnected || isNpcSpeaking}
+                    className={isRecording ? 'sny-mic--listening' : 'sny-mic'}
+                    style={{
+                      width: 84,
+                      height: 84,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 4,
+                      cursor: (!isConnected || isNpcSpeaking) ? 'not-allowed' : 'pointer',
+                      opacity: (!isConnected || isNpcSpeaking) ? 0.5 : 1,
+                      background: isRecording
+                        ? 'linear-gradient(180deg, #D27A57 0%, #A9442E 100%)'
+                        : 'linear-gradient(180deg, #1F2748 0%, #0F142A 100%)',
+                      color: 'var(--sny-paper-highlight)',
+                      border: isRecording
+                        ? '1px solid rgba(193, 87, 63, 0.6)'
+                        : '1px solid rgba(15, 20, 42, 0.5)',
+                      transition: 'background 0.2s ease, border-color 0.2s ease',
+                    }}
+                    aria-label={isRecording ? 'Stop listening' : 'Start speaking'}
+                  >
+                    {/* Minimal mic glyph drawn with SVG — no emoji. */}
+                    <svg
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="9" y="3" width="6" height="11" rx="3" />
+                      <path d="M5 11a7 7 0 0 0 14 0" />
+                      <line x1="12" y1="18" x2="12" y2="22" />
+                    </svg>
+                    <Text
+                      fz={9}
+                      fw={700}
+                      c="inherit"
+                      style={{ letterSpacing: '0.22em', textTransform: 'uppercase' }}
+                    >
+                      {isRecording ? 'Listening' : 'Speak'}
+                    </Text>
+                  </UnstyledButton>
 
-            <ActionIcon
-              variant="default"
-              size="lg"
-              radius="xl"
-              onClick={() => setShowTextInput((v) => !v)}
-              title="Toggle text input"
-            >
-              ⌨️
-            </ActionIcon>
+                  <Stack gap={2} style={{ flex: 1 }}>
+                    <Text
+                      fz={10}
+                      fw={700}
+                      c="ink.6"
+                      style={{ letterSpacing: '0.22em', textTransform: 'uppercase' }}
+                    >
+                      {isRecording
+                        ? 'Your voice is the scene'
+                        : isNpcSpeaking
+                          ? 'Please listen'
+                          : 'Your turn'}
+                    </Text>
+                    <Text className="sny-serif" fz={16} c="ink.7" fs="italic" lineClamp={1}>
+                      {isRecording
+                        ? 'Speak naturally — pauses are welcome.'
+                        : isNpcSpeaking
+                          ? `${npcDisplayName} is speaking…`
+                          : 'Tap the microphone, or type below.'}
+                    </Text>
+                  </Stack>
 
-            {showTextInput && (
-              <form onSubmit={handleTextSubmit} style={{ flex: 1, display: 'flex', gap: 8 }}>
-                <TextInput
-                  style={{ flex: 1 }}
-                  placeholder={`Type in ${lang.toUpperCase()}…`}
-                  value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
-                  disabled={!isConnected || isProcessing}
-                  autoFocus
-                />
-                <Button type="submit" disabled={!isConnected || isProcessing || !textInput.trim()}>
-                  Send
-                </Button>
-              </form>
-            )}
-          </Group>
+                  <ActionIcon
+                    variant="default"
+                    size={42}
+                    radius={0}
+                    onClick={() => setShowTextInput((v) => !v)}
+                    title="Toggle text input"
+                    styles={{
+                      root: {
+                        border: '1px solid var(--sny-hairline)',
+                        background: showTextInput
+                          ? 'var(--sny-ink)'
+                          : 'var(--sny-paper)',
+                        color: showTextInput ? 'var(--sny-paper-highlight)' : 'var(--sny-ink)',
+                      },
+                    }}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="4 7 4 4 20 4 20 7" />
+                      <line x1="9" y1="20" x2="15" y2="20" />
+                      <line x1="12" y1="4" x2="12" y2="20" />
+                    </svg>
+                  </ActionIcon>
+                </Group>
+
+                {showTextInput && (
+                  <form onSubmit={handleTextSubmit} style={{ display: 'flex', gap: 8 }}>
+                    <TextInput
+                      style={{ flex: 1 }}
+                      placeholder={`Write in ${langCode}…`}
+                      value={textInput}
+                      onChange={(e) => setTextInput(e.target.value)}
+                      disabled={!isConnected || isProcessing}
+                      autoFocus
+                      radius={0}
+                      styles={{
+                        input: {
+                          background: 'var(--sny-paper)',
+                          border: '1px solid var(--sny-hairline)',
+                          fontFamily: 'var(--sny-serif)',
+                          fontStyle: 'italic',
+                          fontSize: 15,
+                          color: 'var(--sny-ink)',
+                        },
+                      }}
+                    />
+                    <Button
+                      type="submit"
+                      color="ink.8"
+                      radius={0}
+                      disabled={!isConnected || isProcessing || !textInput.trim()}
+                    >
+                      Send
+                    </Button>
+                  </form>
+                )}
+              </Stack>
+            </Box>
+          </Box>
         </Stack>
       </Group>
+    </Box>
+  );
+}
 
-      <style>
-        {`
-          @keyframes micPulse {
-            0% { box-shadow: 0 0 0 0 rgba(231,76,60,0.5); }
-            70% { box-shadow: 0 0 0 14px rgba(231,76,60,0); }
-            100% { box-shadow: 0 0 0 0 rgba(231,76,60,0); }
-          }
-          @keyframes thinkingBounce {
-            0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
-            40% { transform: translateY(-6px); opacity: 1; }
-          }
-          .thinking-dot { animation: thinkingBounce 1.2s ease-in-out infinite; }
-          .thinking-dot-0 { animation-delay: 0s; }
-          .thinking-dot-1 { animation-delay: 0.2s; }
-          .thinking-dot-2 { animation-delay: 0.4s; }
-        `}
-      </style>
+/**
+ * A single line of the transcript.
+ * Styled like a dialogue in a printed play: role in smallcaps,
+ * line below in serif italic for the NPC and clean sans for you.
+ */
+function MessageLine({ msg, npcName }) {
+  if (msg.role === 'system') {
+    return (
+      <Box className="sny-anim-fade-in" style={{ textAlign: 'center' }}>
+        <Text
+          fz={10}
+          fw={700}
+          c="ink.5"
+          style={{ letterSpacing: '0.22em', textTransform: 'uppercase' }}
+        >
+          · stage direction ·
+        </Text>
+        <Text
+          className="sny-serif"
+          fz={14}
+          fs="italic"
+          c="ink.6"
+          mt={4}
+        >
+          {msg.text}
+        </Text>
+      </Box>
+    );
+  }
+
+  const isUser = msg.role === 'user';
+  return (
+    <Box
+      className="sny-anim-fade-in"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '90px 1fr',
+        columnGap: 16,
+        alignItems: 'baseline',
+        opacity: msg.streaming ? 0.88 : 1,
+      }}
+    >
+      <Text
+        fz={10}
+        fw={700}
+        c={isUser ? 'clay.6' : 'ink.7'}
+        style={{
+          letterSpacing: '0.22em',
+          textTransform: 'uppercase',
+          paddingTop: 3,
+        }}
+        ta="right"
+      >
+        {isUser ? 'You' : npcName}
+      </Text>
+      <Text
+        fz={{ base: 16, md: 17 }}
+        className={isUser ? undefined : 'sny-serif'}
+        fs={isUser ? 'normal' : 'italic'}
+        fw={isUser ? 500 : 500}
+        c={isUser ? 'ink.8' : 'ink.7'}
+        style={{
+          lineHeight: 1.55,
+          letterSpacing: isUser ? '0' : '-0.005em',
+        }}
+      >
+        {msg.text}
+      </Text>
     </Box>
   );
 }
