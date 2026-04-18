@@ -27,9 +27,12 @@ Difficulty Level: {difficulty}
 Current NPC Speech Mode: {npc_mode}
 
 CORE RULES:
-1. ONLY respond in {target_language}. Never use English unless the user explicitly says "hint" or "help".
+1. ONLY respond in {language_name}. Never use English unless the user explicitly says "hint" or "help".
 2. Stay completely in character as the {npc_role} at all times.
 3. Keep responses natural and conversational.
+
+NATIVE LANGUAGE INSTRUCTION:
+{npc_system_instruction}
 
 SPEECH MODE RULES (current mode: {npc_mode}):
 - support: Use very simple vocabulary and short sentences (5-10 words). Speak slowly and clearly. Only use the most common words.
@@ -99,15 +102,22 @@ class LLMService:
             "strict": CORRECTION_STRICT,
         }.get(correction_mode, CORRECTION_OFF)
 
+        lang_code = scenario.get("target_language", "fr")
+        default_names = {"fr": "French (français)", "es": "Spanish (español)",
+                         "de": "German (Deutsch)", "ja": "Japanese (日本語)"}
+        language_name = scenario.get("language_name", default_names.get(lang_code, lang_code))
+
         return BASE_SYSTEM_PROMPT.format(
             npc_role=scenario.get("npc_role", "a friendly local"),
             npc_personality=scenario.get("npc_personality", "friendly and patient"),
             setting=scenario.get("setting", "a local establishment"),
-            target_language=scenario.get("target_language", "fr"),
+            target_language=lang_code,
+            language_name=language_name,
             difficulty=scenario.get("difficulty", "beginner"),
             npc_mode=npc_mode,
             success_criteria=scenario.get("success_criteria", "Have a natural conversation"),
             spaced_repetition_instruction=sr_instruction,
+            npc_system_instruction=scenario.get("npc_system_instruction", f"Please respond only in {language_name}."),
         ) + correction_block
 
     async def generate_response(

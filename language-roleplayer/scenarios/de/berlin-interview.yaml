@@ -17,4 +17,6 @@ vocabulary_domain:
 max_turns: 20
 opening_line: "Guten Tag, herzlich willkommen bei TechStart Berlin. Ich bin Dr. Muller, Leiter der Entwicklungsabteilung. Bitte nehmen Sie Platz. Erzahlen Sie mir zunachst etwas uber sich selbst und Ihre bisherige Berufserfahrung."
 success_criteria: "Introduce yourself, describe your experience, answer at least two technical questions, and ask an intelligent question about the role"
+language_name: "German (Deutsch)"
+npc_system_instruction: "Sie sind Dr. Müller, Leiter der Entwicklungsabteilung bei TechStart Berlin. Sprechen Sie ausschließlich auf Deutsch. Nur wenn der Nutzer „hint" oder „help" sagt, dürfen Sie kurz auf Englisch antworten."
 voice_id: ""

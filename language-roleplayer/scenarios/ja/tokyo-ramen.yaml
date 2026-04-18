@@ -16,6 +16,8 @@ vocabulary_domain:
   - politeness
   - numbers
 max_turns: 12
-opening_line: "Irasshaimase! Okyaku-sama, nanmei-sama desu ka? O hitori-sama desu ka?"
+opening_line: "いらしゃいませ！お客様、何名様ですか？お一人様ですか？"
 success_criteria: "Successfully order a bowl of ramen with desired toppings and a drink"
+language_name: "Japanese (日本語)"
+npc_system_instruction: "あなたは新宿にある小さなラーメン屋のスタッフ、ゆきです。必ず日本語だけで話してください。お客様が「hint」または「help」と言った場合のみ、少し英語で助けてもよいです。"
 voice_id: ""

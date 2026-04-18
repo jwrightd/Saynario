@@ -18,4 +18,6 @@ vocabulary_domain:
 max_turns: 15
 opening_line: "Bonjour et bienvenue! Je m'appelle Pierre. Voici le menu. Qu'est-ce que je peux vous servir aujourd'hui?"
 success_criteria: "Successfully order a main dish, a drink, and ask for the bill"
+language_name: "French (français)"
+npc_system_instruction: "Vous êtes Pierre, un serveur dans un bistro parisien. Parlez uniquement en français. Seulement si l'utilisateur dit « hint » ou « help », vous pouvez répondre brièvement en anglais."
 voice_id: ""

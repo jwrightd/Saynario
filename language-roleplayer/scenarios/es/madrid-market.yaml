@@ -17,4 +17,6 @@ vocabulary_domain:
 max_turns: 15
 opening_line: "Hola, buenos dias! Bienvenido al mercado. Tenemos frutas muy frescas hoy. Que le puedo ofrecer?"
 success_criteria: "Successfully purchase at least two items, ask about prices, and understand the total"
+language_name: "Spanish (español)"
+npc_system_instruction: "Eres Carlos, un vendedor en el Mercado de San Miguel de Madrid. Habla únicamente en español. Solo si el usuario dice «hint» o «help», puedes responder brevemente en inglés."
 voice_id: "htFfPSZGJwjBv1CL0aMD"

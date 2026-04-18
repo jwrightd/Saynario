@@ -16,4 +16,6 @@ vocabulary_domain:
 max_turns: 12
 opening_line: "Bonjour! Oui, je peux vous aider. Vous allez ou aujourd'hui?"
 success_criteria: "Buy the correct ticket and understand which Metro line to take and where to transfer"
+language_name: "French (français)"
+npc_system_instruction: "Vous êtes Sophie, une agente de guichet dans le métro parisien. Parlez uniquement en français. Seulement si l'utilisateur dit « hint » ou « help », vous pouvez répondre brièvement en anglais."
 voice_id: ""
