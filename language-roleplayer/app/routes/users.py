@@ -1,7 +1,8 @@
 """REST API routes for user management and progress tracking."""
 
 from fastapi import APIRouter, HTTPException
-from app.models.schemas import ProgressOut
+from app.models.schemas import LearnerProfile, ProgressOut
+from app.services.learner_memory import get_learner_memory_store
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -44,3 +45,23 @@ async def get_user_history(user_id: str, limit: int = 20):
         "sessions": [],
         "message": "Session history will be populated once database persistence is enabled.",
     }
+
+
+@router.get("/{user_id}/coach-profiles", response_model=list[LearnerProfile])
+async def list_coach_profiles(user_id: str):
+    """List all persisted learner profiles for a user across languages."""
+    if user_id not in _users:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    store = get_learner_memory_store()
+    return store.list_profiles(user_id)
+
+
+@router.get("/{user_id}/coach-profile/{language}", response_model=LearnerProfile)
+async def get_coach_profile(user_id: str, language: str):
+    """Get the persisted learner profile for a specific language."""
+    if user_id not in _users:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    store = get_learner_memory_store()
+    return store.get_profile(user_id, language)

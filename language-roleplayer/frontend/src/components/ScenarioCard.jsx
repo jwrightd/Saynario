@@ -202,7 +202,7 @@ export default function ScenarioCard({ scenario, onClick, onDelete }) {
               background: 'rgba(31, 39, 72, 0.35)',
             }}
           >
-            Custom
+            {scenario.createdByCoach ? 'Coach' : 'Custom'}
           </Box>
         )}
 
@@ -283,6 +283,12 @@ export default function ScenarioCard({ scenario, onClick, onDelete }) {
             style={{ fontWeight: 500 }}
           >
             You’ll meet {formatRoleWithArticle(scenario.npc_role)}
+          </Text>
+        )}
+
+        {scenario.createdByCoach && (
+          <Text fz={10} c="clay.6" style={{ letterSpacing: '0.16em', textTransform: 'uppercase' }}>
+            Saved from your coach
           </Text>
         )}
 

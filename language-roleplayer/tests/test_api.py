@@ -7,6 +7,7 @@ from httpx import AsyncClient, ASGITransport
 # Force mock mode for tests
 os.environ["MOCK_MODE"] = "true"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///test.db"
+os.environ["LEARNER_MEMORY_DIR"] = ".pytest-learner-memory"
 
 from app.main import app
 
@@ -75,3 +76,50 @@ async def test_user_progress_default_user(client):
 async def test_user_not_found(client):
     res = await client.get("/api/users/nobody/progress")
     assert res.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_end_session_returns_coach_payload_and_persists_profile(client):
+    start_res = await client.post("/api/sessions", json={
+        "custom_scenario": {
+            "id": "test-fr-coach",
+            "title": "Ordering Lunch in Paris",
+            "target_language": "fr",
+            "difficulty": "beginner",
+            "setting": "A Paris bistro at lunchtime.",
+            "npc_role": "A friendly waiter named Pierre",
+            "npc_personality": "Warm and patient",
+            "vocabulary_domain": ["food", "restaurant"],
+            "max_turns": 12,
+            "opening_line": "Bonjour et bienvenue!",
+            "success_criteria": "Order lunch clearly.",
+            "voice_id": "",
+        },
+        "user_id": "default-user",
+    })
+    assert start_res.status_code == 200
+    session_id = start_res.json()["id"]
+
+    end_res = await client.post(f"/api/sessions/{session_id}/end")
+    assert end_res.status_code == 200
+    payload = end_res.json()
+
+    assert payload["status"] == "completed"
+    assert payload["evaluation"]["overall_score"] > 0
+    assert payload["coach"]["recommended_difficulty"] in {"beginner", "intermediate", "advanced"}
+    assert payload["coach"]["recommended_correction_mode"] in {"off", "gentle", "strict"}
+    assert payload["coach"]["next_scenario"]["target_language"] == "fr"
+    assert payload["learner_profile"]["user_id"] == "default-user"
+    assert payload["learner_profile"]["target_language"] == "fr"
+
+    profile_res = await client.get("/api/users/default-user/coach-profile/fr")
+    assert profile_res.status_code == 200
+    profile = profile_res.json()
+    assert profile["last_recommended_scenario"]["title"] == payload["coach"]["next_scenario"]["title"]
+
+
+@pytest.mark.anyio
+async def test_list_coach_profiles(client):
+    res = await client.get("/api/users/default-user/coach-profiles")
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)

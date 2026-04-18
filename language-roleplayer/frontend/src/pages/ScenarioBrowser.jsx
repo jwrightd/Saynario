@@ -292,10 +292,10 @@ export default function ScenarioBrowser() {
         </Alert>
       )}
 
-      {/* ── Custom (your scenarios) ──────────────────────────────────────── */}
+      {/* ── Custom + coach-made scenes ───────────────────────────────────── */}
       {filteredCustom.length > 0 && (
         <Stack gap="md">
-          <SectionHeading kicker="Composed by you" title="Your scenes" />
+          <SectionHeading kicker="Saved in your atelier" title="Custom scenes" />
           <SimpleGrid
             cols={{ base: 1, sm: 2, lg: 3 }}
             spacing="lg"

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ActionIcon,
   Box,
@@ -12,7 +13,8 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { EvaluationContent } from '../components/EvaluationReport';
-import { getSessionHistory, deleteSessionRecord } from '../utils/storage';
+import { createSession } from '../utils/api';
+import { getSessionHistory, deleteSessionRecord, saveCoachScenario } from '../utils/storage';
 
 const LANG_FLAGS = {
   fr: '🇫🇷', es: '🇪🇸', de: '🇩🇪', ja: '🇯🇵',
@@ -176,7 +178,10 @@ function SessionRow({ record, isLast, onView, onDelete }) {
 export default function HistoryPage() {
   const [history, setHistory] = useState([]);
   const [viewing, setViewing] = useState(null);
+  const [startingRecommended, setStartingRecommended] = useState(false);
+  const [startRecommendationError, setStartRecommendationError] = useState('');
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     setHistory(getSessionHistory());
@@ -184,6 +189,8 @@ export default function HistoryPage() {
 
   function handleView(record) {
     setViewing(record);
+    setStartRecommendationError('');
+    setStartingRecommended(false);
     openModal();
   }
 
@@ -191,6 +198,23 @@ export default function HistoryPage() {
     deleteSessionRecord(id);
     setHistory(getSessionHistory());
     if (viewing?.id === id) closeModal();
+  }
+
+  async function handleStartRecommended() {
+    if (!viewing?.coach?.next_scenario || startingRecommended) return;
+    try {
+      setStartingRecommended(true);
+      setStartRecommendationError('');
+      const savedScenario = saveCoachScenario(viewing.coach.next_scenario, viewing.scenarioInfo);
+      const session = await createSession(null, savedScenario || viewing.coach.next_scenario);
+      closeModal();
+      navigate(`/conversation/${session.id}`, {
+        state: { recommendedCorrectionMode: viewing.coach.recommended_correction_mode },
+      });
+    } catch (err) {
+      setStartRecommendationError(`Could not start the recommended scene: ${err.message}`);
+      setStartingRecommended(false);
+    }
   }
 
   return (
@@ -315,9 +339,13 @@ export default function HistoryPage() {
               <ScrollArea style={{ height: 'calc(92vh - 49px)' }}>
                 <EvaluationContent
                   report={viewing.evaluation}
+                  coach={viewing.coach}
                   scenarioInfo={viewing.scenarioInfo}
                   sessionResult={null}
                   onNewSession={closeModal}
+                  onStartRecommended={viewing.coach ? handleStartRecommended : null}
+                  startingRecommended={startingRecommended}
+                  startRecommendationError={startRecommendationError}
                   innerScroll={false}
                 />
               </ScrollArea>

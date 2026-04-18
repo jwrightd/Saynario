@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     elevenlabs_api_key: str = ""
+    gemini_api_key: str = ""
 
     # Whisper
     whisper_mode: str = "api"  # "api" or "local"
@@ -39,7 +40,11 @@ class Settings(BaseSettings):
     # LLM
     # claude-sonnet-4-20250514 is Claude Sonnet 4 (latest stable as of 2025-05)
     claude_model: str = "claude-sonnet-4-20250514"
+    gemini_model: str = "gemini-2.5-flash"
     max_conversation_turns: int = 40
+
+    # Learner memory
+    learner_memory_dir: str = "data/learner_memory"
 
     # TTS
     elevenlabs_model: str = "eleven_multilingual_v2"

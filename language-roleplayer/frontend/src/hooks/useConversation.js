@@ -5,7 +5,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createConversationSocket } from '../utils/api';
-import { addVocabHints, saveSessionRecord } from '../utils/storage';
+import { addVocabHints, saveCoachScenario, saveSessionRecord } from '../utils/storage';
 
 export default function useConversation(sessionId) {
   const [messages, setMessages] = useState([]);
@@ -13,6 +13,8 @@ export default function useConversation(sessionId) {
   const [isNpcSpeaking, setIsNpcSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [evaluation, setEvaluation] = useState(null);
+  const [coach, setCoach] = useState(null);
+  const [learnerProfile, setLearnerProfile] = useState(null);
   const [scenarioInfo, setScenarioInfo] = useState(null);
   const [error, setError] = useState(null);
 
@@ -70,6 +72,9 @@ export default function useConversation(sessionId) {
       case 'session_started':
         scenarioInfoRef.current = data.scenario;
         sessionSavedRef.current = false;
+        setEvaluation(null);
+        setCoach(null);
+        setLearnerProfile(null);
         setScenarioInfo(data.scenario);
         if (data.scenario?.difficulty) {
           setDifficultyMode(
@@ -146,6 +151,9 @@ export default function useConversation(sessionId) {
         if (!sessionSavedRef.current) {
           sessionSavedRef.current = true;
           const si = scenarioInfoRef.current;
+          const savedCoachScenario = data.coach?.next_scenario
+            ? saveCoachScenario(data.coach.next_scenario, si)
+            : null;
           saveSessionRecord({
             id: `session_${Date.now()}`,
             scenarioTitle: si?.title || 'Conversation',
@@ -153,11 +161,16 @@ export default function useConversation(sessionId) {
             difficulty: si?.difficulty || 'beginner',
             completedAt: new Date().toISOString(),
             evaluation: data.report,
+            coach: data.coach || null,
+            learnerProfile: data.learner_profile || null,
+            savedCoachScenarioId: savedCoachScenario?.id || null,
             transcript: messagesRef.current.filter((m) => !m.streaming),
             scenarioInfo: si,
           });
         }
         setEvaluation(data.report);
+        setCoach(data.coach || null);
+        setLearnerProfile(data.learner_profile || null);
         setIsProcessing(false);
         break;
 
@@ -286,6 +299,8 @@ export default function useConversation(sessionId) {
     isNpcSpeaking,
     isProcessing,
     evaluation,
+    coach,
+    learnerProfile,
     scenarioInfo,
     error,
     // V2

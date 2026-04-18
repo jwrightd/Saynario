@@ -1,6 +1,7 @@
 """Tests for the core service modules."""
 
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -18,8 +19,10 @@ from app.services.llm import create_llm_service, MockLLMService, LLMService
 from app.services.tts import create_tts_service, MockTTSService, TTSService
 from app.services.vad import create_vad_service, MockVADService
 from app.services.evaluation import create_evaluation_service, MockEvaluationService
+from app.services.gemini_coach import create_coach_service, MockGeminiCoachService
 from app.services.session_manager import SessionManager
 from app.services.scenario_loader import load_scenarios, get_scenario, get_all_scenarios
+from app.models.schemas import LearnerProfile
 
 
 # ── Factory Tests ──────────────────────────────────────────
@@ -47,6 +50,11 @@ def test_vad_factory_returns_mock():
 def test_eval_factory_returns_mock():
     ev = create_evaluation_service()
     assert isinstance(ev, MockEvaluationService)
+
+
+def test_coach_factory_returns_mock_without_credentials():
+    coach = create_coach_service()
+    assert isinstance(coach, MockGeminiCoachService)
 
 
 # ── Mock STT ───────────────────────────────────────────────
@@ -249,6 +257,59 @@ async def test_mock_evaluation():
     assert report.overall_score > 0
     assert report.cefr_estimate in ["A1", "A2", "B1", "B2", "C1", "C2"]
     assert isinstance(report.grammar_errors, list)
+
+
+@pytest.mark.asyncio
+async def test_mock_coach_generates_recommendation_and_profile():
+    coach = MockGeminiCoachService()
+    prior_profile = LearnerProfile(
+        user_id="default-user",
+        target_language="fr",
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    evaluation = await MockEvaluationService().evaluate(
+        [{"role": "user", "content": "Bonjour, je veux un cafe"}],
+        {
+            "title": "Ordering Lunch in Paris",
+            "target_language": "fr",
+            "difficulty": "beginner",
+            "setting": "A Paris bistro.",
+            "npc_role": "A friendly waiter",
+            "npc_personality": "Warm and patient",
+            "opening_line": "Bonjour!",
+            "success_criteria": "Order lunch clearly.",
+            "vocabulary_domain": ["food", "restaurant"],
+            "max_turns": 12,
+        },
+    )
+
+    recommendation, updated_profile = await coach.analyze_session(
+        user_id="default-user",
+        conversation_history=[{"role": "user", "content": "Bonjour, je veux un cafe"}],
+        scenario={
+            "title": "Ordering Lunch in Paris",
+            "target_language": "fr",
+            "difficulty": "beginner",
+            "setting": "A Paris bistro.",
+            "npc_role": "A friendly waiter",
+            "npc_personality": "Warm and patient",
+            "opening_line": "Bonjour!",
+            "success_criteria": "Order lunch clearly.",
+            "vocabulary_domain": ["food", "restaurant"],
+            "max_turns": 12,
+        },
+        evaluation=evaluation,
+        prior_profile=prior_profile,
+    )
+
+    assert recommendation.recommended_difficulty in {"beginner", "intermediate", "advanced"}
+    assert recommendation.recommended_correction_mode in {"off", "gentle", "strict"}
+    assert recommendation.next_scenario.target_language == "fr"
+    assert recommendation.next_scenario.title != "Ordering Lunch in Paris"
+    assert "follow-up" not in recommendation.next_scenario.title.lower()
+    assert updated_profile.user_id == "default-user"
+    assert updated_profile.last_recommended_scenario is not None
 
 
 # ── Session Manager ───────────────────────────────────────

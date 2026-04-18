@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ActionIcon,
   Alert,
@@ -328,9 +328,11 @@ function ScenePanel({
 export default function ConversationPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [textInput, setTextInput] = useState('');
   const [showTextInput, setShowTextInput] = useState(false);
   const transcriptViewport = useRef(null);
+  const coachModeAppliedRef = useRef(false);
   const [drawerOpened, { open: openDrawer, close: closeDrawer }] = useDisclosure(false);
   const isMobile = useMediaQuery('(max-width: 48em)');
 
@@ -340,6 +342,8 @@ export default function ConversationPage() {
     isNpcSpeaking,
     isProcessing,
     evaluation,
+    coach,
+    learnerProfile,
     scenarioInfo,
     error,
     vocabHints,
@@ -366,6 +370,17 @@ export default function ConversationPage() {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     }
   }, [messages]);
+
+  useEffect(() => {
+    coachModeAppliedRef.current = false;
+  }, [sessionId]);
+
+  useEffect(() => {
+    const recommendedMode = location.state?.recommendedCorrectionMode;
+    if (!recommendedMode || coachModeAppliedRef.current || !isConnected) return;
+    setCorrectionMode(recommendedMode);
+    coachModeAppliedRef.current = true;
+  }, [isConnected, location.state?.recommendedCorrectionMode, setCorrectionMode]);
 
   function handleTextSubmit(e) {
     e.preventDefault();
@@ -411,6 +426,8 @@ export default function ConversationPage() {
     return (
       <EvaluationReport
         report={evaluation}
+        coach={coach}
+        learnerProfile={learnerProfile}
         scenarioInfo={scenarioInfo}
         onNewSession={() => navigate('/')}
       />

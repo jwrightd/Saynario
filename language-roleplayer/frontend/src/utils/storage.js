@@ -146,22 +146,71 @@ export function getCustomScenarios() {
   }
 }
 
-/** Saves a new custom scenario. Returns the saved scenario with generated id. */
-export function saveCustomScenario(scenario) {
+function slugifyPart(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
+
+function buildScenarioId(prefix, scenario) {
+  const parts = [
+    scenario.target_language || "xx",
+    slugifyPart(scenario.title || "scene"),
+    slugifyPart(scenario.npc_role || "partner"),
+  ].filter(Boolean);
+
+  const stem = parts.join("-") || `${prefix}-${Date.now()}`;
+  return `${prefix}_${stem}`.slice(0, 96);
+}
+
+function upsertCustomScenario(scenario) {
   try {
     const scenarios = getCustomScenarios();
+    const now = new Date().toISOString();
+    const id = scenario.id || buildScenarioId("custom", scenario);
+    const existingIndex = scenarios.findIndex((item) => item.id === id);
+    const existing = existingIndex >= 0 ? scenarios[existingIndex] : null;
     const saved = {
+      ...existing,
       ...scenario,
-      id: `custom_${Date.now()}`,
+      id,
       isCustom: true,
-      createdAt: new Date().toISOString(),
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
     };
-    scenarios.push(saved);
+
+    if (existingIndex >= 0) {
+      scenarios.splice(existingIndex, 1);
+    }
+
+    scenarios.unshift(saved);
     localStorage.setItem(KEYS.CUSTOM_SCENARIOS, JSON.stringify(scenarios));
     return saved;
   } catch {
     return null;
   }
+}
+
+/** Saves a new custom scenario. Returns the saved scenario with generated id. */
+export function saveCustomScenario(scenario) {
+  return upsertCustomScenario({
+    ...scenario,
+    id: scenario.id || `custom_${Date.now()}`,
+    createdByCoach: false,
+  });
+}
+
+/** Saves or updates a coach-generated scenario in the custom scenario shelf. */
+export function saveCoachScenario(scenario, sourceScenario = null) {
+  return upsertCustomScenario({
+    ...scenario,
+    id: scenario.id || buildScenarioId("coach", scenario),
+    createdByCoach: true,
+    coachSourceScenarioTitle: sourceScenario?.title || "",
+    coachCreatedAt: new Date().toISOString(),
+  });
 }
 
 /** Deletes a custom scenario by id. */

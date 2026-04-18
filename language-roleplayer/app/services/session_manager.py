@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class ConversationState:
     """Tracks the state of an active conversation session."""
     session_id: str
+    user_id: str
     scenario: dict
     conversation_history: list[dict] = field(default_factory=list)
     turn_count: int = 0
@@ -49,9 +50,9 @@ class SessionManager:
     def __init__(self):
         self._sessions: dict[str, ConversationState] = {}
 
-    def create_session(self, session_id: str, scenario: dict) -> ConversationState:
+    def create_session(self, session_id: str, scenario: dict, user_id: str = "default-user") -> ConversationState:
         """Create a new conversation session."""
-        state = ConversationState(session_id=session_id, scenario=scenario)
+        state = ConversationState(session_id=session_id, user_id=user_id, scenario=scenario)
 
         # Add the NPC's opening line as the first turn
         opening_line = scenario.get("opening_line", "")

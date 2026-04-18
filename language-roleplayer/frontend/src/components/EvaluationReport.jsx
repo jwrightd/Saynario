@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -9,7 +10,8 @@ import {
   Text,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { recordSession, computeXP } from '../utils/storage';
+import { createSession } from '../utils/api';
+import { recordSession, computeXP, saveCoachScenario } from '../utils/storage';
 import { scenarioBannerBackground, scenarioMoodName } from '../utils/scenarioBanner';
 
 const LANG_CITIES = {
@@ -265,7 +267,265 @@ function SectionHead({ kicker, title }) {
   );
 }
 
-export function EvaluationContent({ report, scenarioInfo, sessionResult, onNewSession, innerScroll = true }) {
+function CoachMeta({ label, value, accent = 'ink' }) {
+  const color =
+    accent === 'olive'
+      ? 'var(--sny-olive)'
+      : accent === 'clay'
+        ? 'var(--sny-clay)'
+        : accent === 'gilt'
+          ? 'var(--sny-gilt)'
+          : 'var(--sny-ink)';
+
+  return (
+    <Box
+      px={12}
+      py={10}
+      style={{
+        border: '1px solid var(--sny-hairline)',
+        background: 'var(--sny-paper-highlight)',
+        minWidth: 120,
+      }}
+    >
+      <Text
+        fz={10}
+        fw={700}
+        c="ink.6"
+        style={{ letterSpacing: '0.18em', textTransform: 'uppercase' }}
+      >
+        {label}
+      </Text>
+      <Text
+        mt={4}
+        fz="sm"
+        fw={600}
+        c={color}
+        className="sny-serif"
+        fs="italic"
+        style={{ lineHeight: 1.3 }}
+      >
+        {value}
+      </Text>
+    </Box>
+  );
+}
+
+function CoachList({ items, accent = 'clay', emptyLabel = null }) {
+  if (!items?.length) {
+    return emptyLabel ? (
+      <Text fz="sm" c="ink.6" style={{ lineHeight: 1.6 }}>
+        {emptyLabel}
+      </Text>
+    ) : null;
+  }
+
+  const color =
+    accent === 'olive'
+      ? 'olive.7'
+      : accent === 'gilt'
+        ? 'gilt.7'
+        : 'clay.6';
+
+  return (
+    <Stack gap={10}>
+      {items.map((item, index) => (
+        <Group key={`${item}-${index}`} gap={10} wrap="nowrap" align="baseline">
+          <Text
+            fz={10}
+            fw={700}
+            c={color}
+            style={{ letterSpacing: '0.22em', flexShrink: 0 }}
+          >
+            · {String(index + 1).padStart(2, '0')}
+          </Text>
+          <Text fz="sm" c="ink.7" style={{ lineHeight: 1.6 }}>
+            {item}
+          </Text>
+        </Group>
+      ))}
+    </Stack>
+  );
+}
+
+function CoachSection({
+  coach,
+  onStartRecommended,
+  startingRecommended,
+  startRecommendationError,
+}) {
+  if (!coach) return null;
+
+  const difficultyLabel =
+    coach.recommended_difficulty === 'advanced'
+      ? 'Immersive'
+      : coach.recommended_difficulty === 'intermediate'
+        ? 'Measured'
+        : 'Gentle';
+  const correctionLabel =
+    coach.recommended_correction_mode === 'strict'
+      ? 'Strict'
+      : coach.recommended_correction_mode === 'off'
+        ? 'Off'
+        : 'Gentle';
+
+  return (
+    <Box>
+      <SectionHead kicker="From your coach" title="Your next practice plan" />
+      <Stack gap={18}>
+        <Text className="sny-serif" fz={20} c="ink.8" fs="italic" style={{ lineHeight: 1.45 }}>
+          {coach.learner_summary}
+        </Text>
+
+        <Group gap={10} wrap="wrap">
+          <CoachMeta label="Next pace" value={difficultyLabel} accent="ink" />
+          <CoachMeta label="Corrections" value={correctionLabel} accent="olive" />
+          <CoachMeta
+            label="Focus"
+            value={coach.focus_areas?.[0] || 'Keep building consistency'}
+            accent="clay"
+          />
+        </Group>
+
+        <Box
+          px="md"
+          py="md"
+          style={{
+            border: '1px solid var(--sny-hairline)',
+            background: 'var(--sny-paper-highlight)',
+          }}
+        >
+          <Text
+            fz={10}
+            fw={700}
+            c="ink.6"
+            style={{ letterSpacing: '0.2em', textTransform: 'uppercase' }}
+          >
+            Recommended next scene
+          </Text>
+          <Text
+            mt={6}
+            className="sny-serif"
+            fz={26}
+            fw={500}
+            c="ink.8"
+            style={{ lineHeight: 1.12, letterSpacing: '-0.01em' }}
+          >
+            {coach.next_scenario?.title}
+          </Text>
+          <Text mt={6} fz="sm" c="ink.6" className="sny-serif" fs="italic">
+            with {coach.next_scenario?.npc_role}
+          </Text>
+          <Text mt={10} fz="sm" c="ink.7" style={{ lineHeight: 1.65 }}>
+            {coach.next_scenario?.setting}
+          </Text>
+          <Text mt={10} fz="sm" c="ink.6" style={{ lineHeight: 1.6 }}>
+            {coach.next_scenario?.success_criteria}
+          </Text>
+        </Box>
+
+        {coach.focus_areas?.length > 0 && (
+          <Box>
+            <SectionHead kicker="Where to lean" title="Priority focus areas" />
+            <CoachList items={coach.focus_areas} accent="clay" />
+          </Box>
+        )}
+
+        {coach.weaknesses?.length > 0 && (
+          <Box>
+            <SectionHead kicker="Recurring friction" title="Patterns to watch" />
+            <CoachList items={coach.weaknesses} accent="clay" />
+          </Box>
+        )}
+
+        {coach.confidence_notes?.length > 0 && (
+          <Box>
+            <SectionHead kicker="Fluency read" title="Confidence notes" />
+            <CoachList items={coach.confidence_notes} accent="olive" />
+          </Box>
+        )}
+
+        {coach.review_vocab?.length > 0 && (
+          <Box>
+            <SectionHead kicker="Before you return" title="Review vocabulary" />
+            <Group gap={8}>
+              {coach.review_vocab.map((word, index) => (
+                <Text
+                  key={`${word}-${index}`}
+                  fz="sm"
+                  fw={500}
+                  className="sny-serif"
+                  c="ink.8"
+                  fs="italic"
+                  px={10}
+                  py={5}
+                  style={{
+                    border: '1px solid var(--sny-hairline)',
+                    background: 'var(--sny-paper-highlight)',
+                  }}
+                >
+                  {word}
+                </Text>
+              ))}
+            </Group>
+          </Box>
+        )}
+
+        <Box
+          px="md"
+          py="md"
+          style={{
+            borderLeft: '2px solid var(--sny-olive)',
+            background: 'rgba(110, 127, 70, 0.08)',
+          }}
+        >
+          <Text fz="sm" c="ink.7" style={{ lineHeight: 1.65 }}>
+            {coach.why_this_next}
+          </Text>
+        </Box>
+
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          {startRecommendationError ? (
+            <Text fz="sm" c="clay.7" style={{ lineHeight: 1.5 }}>
+              {startRecommendationError}
+            </Text>
+          ) : (
+            <Text fz="sm" c="ink.6" style={{ lineHeight: 1.5 }}>
+              Start the recommended scene to apply the coach’s difficulty and correction guidance.
+            </Text>
+          )}
+          <Button
+            onClick={onStartRecommended}
+            loading={startingRecommended}
+            disabled={!coach.next_scenario || !onStartRecommended}
+            color="olive.6"
+            radius={0}
+            size="md"
+            styles={{
+              root: {
+                letterSpacing: '0.04em',
+                fontWeight: 600,
+              },
+            }}
+          >
+            Start recommended scene →
+          </Button>
+        </Group>
+      </Stack>
+    </Box>
+  );
+}
+
+export function EvaluationContent({
+  report,
+  coach,
+  scenarioInfo,
+  sessionResult,
+  onNewSession,
+  onStartRecommended,
+  startingRecommended = false,
+  startRecommendationError = '',
+  innerScroll = true,
+}) {
   const overall = Math.round(report.overall_score || 0);
   const vocab = Math.round(report.vocabulary_score || 0);
   const naturalness = Math.round(report.naturalness_score || 0);
@@ -522,6 +782,13 @@ export function EvaluationContent({ report, scenarioInfo, sessionResult, onNewSe
           </Box>
         )}
 
+        <CoachSection
+          coach={coach}
+          onStartRecommended={onStartRecommended}
+          startingRecommended={startingRecommended}
+          startRecommendationError={startRecommendationError}
+        />
+
         {report.cultural_notes && (
           <Box>
             <SectionHead kicker="A note from the atelier" title="Cultural context" />
@@ -577,9 +844,12 @@ export function EvaluationContent({ report, scenarioInfo, sessionResult, onNewSe
   );
 }
 
-export default function EvaluationReport({ report, scenarioInfo, onNewSession }) {
+export default function EvaluationReport({ report, coach, learnerProfile, scenarioInfo, onNewSession }) {
   const [sessionResult, setSessionResult] = useState(null);
+  const [startingRecommended, setStartingRecommended] = useState(false);
+  const [startRecommendationError, setStartRecommendationError] = useState('');
   const isMobile = useMediaQuery('(max-width: 48em)');
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!report) return;
@@ -590,12 +860,35 @@ export default function EvaluationReport({ report, scenarioInfo, onNewSession })
 
   if (!report) return null;
 
+  async function handleStartRecommended() {
+    if (!coach?.next_scenario || startingRecommended) return;
+    try {
+      setStartingRecommended(true);
+      setStartRecommendationError('');
+      const savedScenario = saveCoachScenario(coach.next_scenario, scenarioInfo);
+      const session = await createSession(null, savedScenario || coach.next_scenario);
+      navigate(`/conversation/${session.id}`, {
+        state: {
+          recommendedCorrectionMode: coach.recommended_correction_mode,
+          learnerProfile,
+        },
+      });
+    } catch (err) {
+      setStartRecommendationError(`Could not start the recommended scene: ${err.message}`);
+      setStartingRecommended(false);
+    }
+  }
+
   const body = (
     <EvaluationContent
       report={report}
+      coach={coach}
       scenarioInfo={scenarioInfo}
       sessionResult={sessionResult}
       onNewSession={onNewSession}
+      onStartRecommended={handleStartRecommended}
+      startingRecommended={startingRecommended}
+      startRecommendationError={startRecommendationError}
     />
   );
 

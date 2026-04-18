@@ -21,7 +21,7 @@ from app.services.stt import create_stt_service
 from app.services.llm import create_llm_service
 from app.services.tts import create_tts_service, split_into_sentences
 from app.services.vad import create_vad_service
-from app.services.evaluation import create_evaluation_service
+from app.services.session_completion import run_session_completion
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -263,12 +263,16 @@ async def conversation_websocket(ws: WebSocket, session_id: str):
 
     async def _send_evaluation():
         """Run evaluation and close the connection."""
-        eval_service = create_evaluation_service()
-        report = await eval_service.evaluate(
-            conversation_history=state.conversation_history,
-            scenario=scenario,
+        completion = await run_session_completion(session_id, state)
+        await send_json(
+            ws,
+            "evaluation",
+            {
+                "report": completion.evaluation.model_dump(mode="json"),
+                "coach": completion.coach.model_dump(mode="json"),
+                "learner_profile": completion.learner_profile.model_dump(mode="json"),
+            },
         )
-        await send_json(ws, "evaluation", {"report": report.model_dump()})
         manager.end_session(session_id)
         try:
             await ws.close()

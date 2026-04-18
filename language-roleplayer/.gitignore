@@ -28,6 +28,9 @@ frontend/dist/
 htmlcov/
 .coverage
 
+# Local learner-memory persistence
+data/learner_memory/*.json
+
 # OS
 .DS_Store
 Thumbs.db

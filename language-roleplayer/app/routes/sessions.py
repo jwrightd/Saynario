@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter, HTTPException
 
-from app.models.schemas import SessionCreate, SessionOut, EvaluationOut, TranscriptEntry
+from app.models.schemas import SessionCreate, SessionOut, TranscriptEntry
 from app.services.scenario_loader import get_scenario
 from app.services.session_manager import get_session_manager
-from app.services.evaluation import create_evaluation_service
+from app.services.session_completion import run_session_completion
 
 import uuid
 from datetime import datetime, timezone
@@ -43,7 +43,7 @@ async def create_session(body: SessionCreate):
 
     session_id = str(uuid.uuid4())
     manager = get_session_manager()
-    manager.create_session(session_id, scenario)
+    manager.create_session(session_id, scenario, user_id=body.user_id)
 
     return SessionOut(
         id=session_id,
@@ -66,8 +66,8 @@ async def get_session(session_id: str):
 
     return SessionOut(
         id=session_id,
-        user_id="default-user",
-        scenario_id=state.scenario.get("id", ""),
+        user_id=state.user_id,
+        scenario_id=state.scenario.get("id") or state.scenario.get("scenario_id", ""),
         started_at=datetime.fromtimestamp(state.started_at, tz=timezone.utc),
         ended_at=None,
         status="active",
@@ -96,28 +96,19 @@ async def get_transcript(session_id: str):
 
 @router.post("/{session_id}/end")
 async def end_session(session_id: str):
-    """End a session and trigger the fluency evaluation."""
+    """End a session and trigger the evaluation + coach pipeline."""
     manager = get_session_manager()
     state = manager.get_session(session_id)
 
     if not state:
         raise HTTPException(status_code=404, detail="Session not found or already ended")
 
-    # Run evaluation
-    eval_service = create_evaluation_service()
-    report = await eval_service.evaluate(
-        conversation_history=state.conversation_history,
-        scenario=state.scenario,
-    )
+    completion = await run_session_completion(session_id, state)
 
     # Clean up session
     manager.end_session(session_id)
 
-    return {
-        "session_id": session_id,
-        "status": "completed",
-        "evaluation": report.model_dump(),
-    }
+    return completion.model_dump(mode="json")
 
 
 @router.get("/{session_id}/evaluation")
