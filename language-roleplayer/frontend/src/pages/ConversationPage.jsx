@@ -341,6 +341,7 @@ export default function ConversationPage() {
     isConnected,
     isNpcSpeaking,
     isProcessing,
+    isEvaluating,
     evaluation,
     coach,
     learnerProfile,
@@ -356,6 +357,7 @@ export default function ConversationPage() {
     sendTextInput,
     requestHint,
     endSession,
+    audioCache,
   } = useConversation(sessionId);
 
   const { isRecording, startRecording, stopRecording, error: micError } =
@@ -693,6 +695,7 @@ export default function ConversationPage() {
                     key={i}
                     msg={msg}
                     npcName={npcDisplayName}
+                    audioChunks={msg.turnId !== undefined ? audioCache[msg.turnId] : undefined}
                   />
                 ))}
 
@@ -702,7 +705,7 @@ export default function ConversationPage() {
                     <Box className="sny-dot sny-dot--1" />
                     <Box className="sny-dot sny-dot--2" />
                     <Text fz={11} c="ink.6" ml={4} style={{ letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-                      Composing a reply
+                      {isEvaluating ? 'Preparing your debrief' : 'Composing a reply'}
                     </Text>
                   </Group>
                 )}
@@ -914,12 +917,26 @@ export default function ConversationPage() {
   );
 }
 
+function replayAudio(chunks) {
+  if (!chunks || chunks.length === 0) return;
+  let i = 0;
+  function playNext() {
+    if (i >= chunks.length) return;
+    const a = new Audio(`data:audio/mp3;base64,${chunks[i++]}`);
+    a.onended = playNext;
+    a.onerror = playNext;
+    a.play().catch(playNext);
+  }
+  playNext();
+}
+
 /**
- * A single line of the transcript.
- * Styled like a dialogue in a printed play: role in smallcaps,
- * line below in serif italic for the NPC and clean sans for you.
+ * A single line of the transcript, styled like a printed play.
+ * NPC messages show a replay button when audio is cached.
  */
-function MessageLine({ msg, npcName }) {
+function MessageLine({ msg, npcName, audioChunks }) {
+  const [playing, setPlaying] = useState(false);
+
   if (msg.role === 'system') {
     return (
       <Box className="sny-anim-fade-in" style={{ textAlign: 'center' }}>
@@ -931,13 +948,7 @@ function MessageLine({ msg, npcName }) {
         >
           · stage direction ·
         </Text>
-        <Text
-          className="sny-serif"
-          fz={14}
-          fs="italic"
-          c="ink.6"
-          mt={4}
-        >
+        <Text className="sny-serif" fz={14} fs="italic" c="ink.6" mt={4}>
           {msg.text}
         </Text>
       </Box>
@@ -945,6 +956,21 @@ function MessageLine({ msg, npcName }) {
   }
 
   const isUser = msg.role === 'user';
+
+  function handleReplay() {
+    if (playing || !audioChunks) return;
+    setPlaying(true);
+    let i = 0;
+    function playNext() {
+      if (i >= audioChunks.length) { setPlaying(false); return; }
+      const a = new Audio(`data:audio/mp3;base64,${audioChunks[i++]}`);
+      a.onended = playNext;
+      a.onerror = () => { setPlaying(false); };
+      a.play().catch(() => { setPlaying(false); });
+    }
+    playNext();
+  }
+
   return (
     <Box
       className="sny-anim-fade-in"
@@ -960,28 +986,52 @@ function MessageLine({ msg, npcName }) {
         fz={10}
         fw={700}
         c={isUser ? 'clay.6' : 'ink.7'}
-        style={{
-          letterSpacing: '0.22em',
-          textTransform: 'uppercase',
-          paddingTop: 3,
-        }}
+        style={{ letterSpacing: '0.22em', textTransform: 'uppercase', paddingTop: 3 }}
         ta="right"
       >
         {isUser ? 'You' : npcName}
       </Text>
-      <Text
-        fz={{ base: 16, md: 17 }}
-        className={isUser ? undefined : 'sny-serif'}
-        fs={isUser ? 'normal' : 'italic'}
-        fw={isUser ? 500 : 500}
-        c={isUser ? 'ink.8' : 'ink.7'}
-        style={{
-          lineHeight: 1.55,
-          letterSpacing: isUser ? '0' : '-0.005em',
-        }}
-      >
-        {msg.text}
-      </Text>
+      <Box style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <Text
+          fz={{ base: 16, md: 17 }}
+          className={isUser ? undefined : 'sny-serif'}
+          fs={isUser ? 'normal' : 'italic'}
+          fw={500}
+          c={isUser ? 'ink.8' : 'ink.7'}
+          style={{ lineHeight: 1.55, letterSpacing: isUser ? '0' : '-0.005em', flex: 1 }}
+        >
+          {msg.text}
+        </Text>
+        {!isUser && audioChunks && !msg.streaming && (
+          <Box
+            component="button"
+            onClick={handleReplay}
+            disabled={playing}
+            title="Replay audio"
+            style={{
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              padding: '2px 4px',
+              cursor: playing ? 'default' : 'pointer',
+              opacity: playing ? 0.4 : 0.55,
+              color: 'var(--sny-ink)',
+              lineHeight: 1,
+              alignSelf: 'center',
+              transition: 'opacity 0.15s ease',
+            }}
+            onMouseEnter={e => { if (!playing) e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={e => { if (!playing) e.currentTarget.style.opacity = '0.55'; }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              {playing
+                ? <><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></>
+                : <polygon points="5 3 19 12 5 21 5 3" />
+              }
+            </svg>
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 }

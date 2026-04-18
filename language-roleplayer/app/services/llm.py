@@ -171,6 +171,28 @@ class LLMService:
             logger.error(f"Claude streaming error: {e}")
             raise
 
+    async def generate_opening_line(self, scenario: dict) -> str:
+        """Generate a native-language opening line when the scenario has none."""
+        lang_name = scenario.get("language_name") or scenario.get("target_language", "fr")
+        npc_role = scenario.get("npc_role", "a friendly local")
+        personality = scenario.get("npc_personality", "friendly and patient")
+        setting = scenario.get("setting", "")
+        prompt = (
+            f"You are {npc_role}. Personality: {personality}. Setting: {setting}\n\n"
+            f"Write one natural opening greeting to start a conversation with a language learner. "
+            f"Respond ONLY in {lang_name} — no English at all. 1-2 sentences maximum."
+        )
+        try:
+            response = await self.client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=120,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text.strip()
+        except Exception as e:
+            logger.warning(f"Opening line generation failed: {e}")
+            return ""
+
     async def extract_vocab_hints(self, npc_text: str, language: str) -> list[dict]:
         """Extract vocabulary hints from NPC text (lightweight secondary call)."""
         import json
@@ -287,6 +309,16 @@ class MockLLMService:
         words = text.split(" ")
         for i, word in enumerate(words):
             yield word + (" " if i < len(words) - 1 else "")
+
+    async def generate_opening_line(self, scenario: dict) -> str:
+        lang = scenario.get("target_language", "fr")
+        defaults = {
+            "fr": "Bonjour, bienvenue ! Comment puis-je vous aider ?",
+            "es": "Hola, ¡bienvenido! ¿En qué le puedo ayudar?",
+            "de": "Guten Tag, herzlich willkommen! Wie kann ich Ihnen helfen?",
+            "ja": "いらっしゃいませ！どのようなご用件でしょうか？",
+        }
+        return defaults.get(lang, "Bonjour !")
 
     async def extract_vocab_hints(self, npc_text: str, language: str) -> list[dict]:
         return self.MOCK_VOCAB_HINTS.get(language, self.MOCK_VOCAB_HINTS["fr"])

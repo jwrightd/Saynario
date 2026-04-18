@@ -12,6 +12,7 @@ export default function useConversation(sessionId) {
   const [isConnected, setIsConnected] = useState(false);
   const [isNpcSpeaking, setIsNpcSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
   const [evaluation, setEvaluation] = useState(null);
   const [coach, setCoach] = useState(null);
   const [learnerProfile, setLearnerProfile] = useState(null);
@@ -19,18 +20,49 @@ export default function useConversation(sessionId) {
   const [error, setError] = useState(null);
 
   // V2 state
-  const [vocabHints, setVocabHints] = useState([]);      // latest batch of vocab hints
-  const [difficultyMode, setDifficultyMode] = useState(null); // "support"|"natural"|"challenge"
+  const [vocabHints, setVocabHints] = useState([]);
+  const [difficultyMode, setDifficultyMode] = useState(null);
   const [difficultyMessage, setDifficultyMessage] = useState(null);
   const [correctionMode, setCorrectionModeState] = useState('off');
 
+  // Audio replay cache: { [turnId]: base64[] sorted by seq }
+  const [audioCache, setAudioCache] = useState({});
+
   const wsRef = useRef(null);
-  const audioQueueRef = useRef([]);  // { seq, audio } objects
+  const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
   const npcBufferRef = useRef('');
   const messagesRef = useRef([]);
   const scenarioInfoRef = useRef(null);
   const sessionSavedRef = useRef(false);
+  const npcTurnIdRef = useRef(0);
+  const pendingAudioRef = useRef([]); // { seq, audio } for the current NPC turn
+
+  // ── Reset all state when session changes (same-route navigation) ────────────
+  useEffect(() => {
+    setMessages([]);
+    setIsConnected(false);
+    setIsNpcSpeaking(false);
+    setIsProcessing(false);
+    setEvaluation(null);
+    setCoach(null);
+    setLearnerProfile(null);
+    setScenarioInfo(null);
+    setError(null);
+    setVocabHints([]);
+    setDifficultyMode(null);
+    setDifficultyMessage(null);
+    setCorrectionModeState('off');
+    setIsEvaluating(false);
+    setAudioCache({});
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    npcBufferRef.current = '';
+    npcTurnIdRef.current = 0;
+    pendingAudioRef.current = [];
+    scenarioInfoRef.current = null;
+    sessionSavedRef.current = false;
+  }, [sessionId]);
 
   // ── Audio playback — sequential queue, ordered by seq ──────────────────────
   const playNextAudio = useCallback(() => {
@@ -43,7 +75,6 @@ export default function useConversation(sessionId) {
     isPlayingRef.current = true;
     setIsNpcSpeaking(true);
 
-    // Sort by seq to ensure correct playback order
     audioQueueRef.current.sort((a, b) => a.seq - b.seq);
     const { audio: audioData } = audioQueueRef.current.shift();
 
@@ -56,12 +87,25 @@ export default function useConversation(sessionId) {
   const queueAudio = useCallback((base64Audio, seq) => {
     audioQueueRef.current.push({ audio: base64Audio, seq });
     if (!isPlayingRef.current) {
-      // Small delay to let concurrent TTS chunks arrive before we start sorting
       setTimeout(() => {
         if (!isPlayingRef.current) playNextAudio();
       }, 80);
     }
   }, [playNextAudio]);
+
+  // Snapshot pending audio and store it for the given turnId after delayMs.
+  // Clears pendingAudioRef so the next turn starts fresh.
+  const cacheTurnAudio = useCallback((turnId, delayMs) => {
+    setTimeout(() => {
+      const chunks = [...pendingAudioRef.current]
+        .sort((a, b) => a.seq - b.seq)
+        .map(c => c.audio);
+      pendingAudioRef.current = [];
+      if (chunks.length > 0) {
+        setAudioCache(prev => ({ ...prev, [turnId]: chunks }));
+      }
+    }, delayMs);
+  }, []);
 
   // ── WebSocket message handler ───────────────────────────────────────────────
   const handleMessage = useCallback((event) => {
@@ -69,7 +113,7 @@ export default function useConversation(sessionId) {
     const { type, data } = msg;
 
     switch (type) {
-      case 'session_started':
+      case 'session_started': {
         scenarioInfoRef.current = data.scenario;
         sessionSavedRef.current = false;
         setEvaluation(null);
@@ -82,12 +126,16 @@ export default function useConversation(sessionId) {
           );
         }
         if (data.opening_line) {
-          setMessages((prev) => [
+          const openingTurnId = npcTurnIdRef.current++;
+          setMessages(prev => [
             ...prev,
-            { role: 'npc', text: data.opening_line },
+            { role: 'npc', text: data.opening_line, turnId: openingTurnId },
           ]);
+          // Opening line audio arrives shortly after session_started; give it 1500ms
+          cacheTurnAudio(openingTurnId, 1500);
         }
         break;
+      }
 
       case 'transcription':
         setMessages((prev) => [
@@ -100,12 +148,15 @@ export default function useConversation(sessionId) {
       case 'npc_text':
         if (data.is_final) {
           const finalText = data.text;
+          const turnId = npcTurnIdRef.current++;
           setMessages((prev) => {
             const filtered = prev.filter((m) => !m.streaming);
-            return [...filtered, { role: 'npc', text: finalText }];
+            return [...filtered, { role: 'npc', text: finalText, turnId }];
           });
           npcBufferRef.current = '';
           setIsProcessing(false);
+          // Sentence-level TTS audio may still be arriving; collect for 600ms
+          cacheTurnAudio(turnId, 600);
         } else {
           npcBufferRef.current += data.text;
           const current = npcBufferRef.current;
@@ -118,14 +169,13 @@ export default function useConversation(sessionId) {
 
       case 'npc_audio':
         queueAudio(data.audio, data.seq ?? 0);
+        // Also accumulate for replay cache
+        pendingAudioRef.current.push({ seq: data.seq ?? 0, audio: data.audio });
         break;
 
-      // V2: Vocabulary hints
       case 'vocab_hints':
         if (data.hints && data.hints.length > 0) {
           setVocabHints(data.hints);
-          // Persist to vocab bank — we need the language from scenarioInfo
-          // Use a functional approach to avoid stale closure on scenarioInfo
           setScenarioInfo((si) => {
             if (si?.target_language) {
               addVocabHints(si.target_language, data.hints);
@@ -135,11 +185,9 @@ export default function useConversation(sessionId) {
         }
         break;
 
-      // V2: Adaptive difficulty change notification
       case 'difficulty_change':
         setDifficultyMode(data.new_mode);
         setDifficultyMessage(data.message);
-        // Auto-clear the notification after 4 seconds
         setTimeout(() => setDifficultyMessage(null), 4000);
         setMessages((prev) => [
           ...prev,
@@ -172,6 +220,7 @@ export default function useConversation(sessionId) {
         setCoach(data.coach || null);
         setLearnerProfile(data.learner_profile || null);
         setIsProcessing(false);
+        setIsEvaluating(false);
         break;
 
       case 'error':
@@ -182,7 +231,7 @@ export default function useConversation(sessionId) {
       default:
         console.warn('Unknown WS message type:', type);
     }
-  }, [queueAudio]);
+  }, [queueAudio, cacheTurnAudio]);
 
   // ── Connect WebSocket ───────────────────────────────────────────────────────
   const connect = useCallback(() => {
@@ -234,8 +283,6 @@ export default function useConversation(sessionId) {
         type: 'text_input',
         data: { text },
       }));
-      // NOTE: do NOT add to messages here — the backend echoes it back
-      // as a `transcription` event, which is the single source of truth.
       setIsProcessing(true);
     }
   }, []);
@@ -254,7 +301,6 @@ export default function useConversation(sessionId) {
     }
   }, []);
 
-  /** V2: Set correction mode (off|gentle|strict) */
   const setCorrectionMode = useCallback((mode) => {
     setCorrectionModeState(mode);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -272,6 +318,7 @@ export default function useConversation(sessionId) {
         data: { action: 'end' },
       }));
       setIsProcessing(true);
+      setIsEvaluating(true);
     }
   }, []);
 
@@ -282,12 +329,10 @@ export default function useConversation(sessionId) {
     }
   }, []);
 
-  // Keep messagesRef current so the evaluation handler can read the full transcript
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  // Auto-connect when sessionId is set
   useEffect(() => {
     if (sessionId) connect();
     return () => disconnect();
@@ -298,18 +343,18 @@ export default function useConversation(sessionId) {
     isConnected,
     isNpcSpeaking,
     isProcessing,
+    isEvaluating,
     evaluation,
     coach,
     learnerProfile,
     scenarioInfo,
     error,
-    // V2
+    audioCache,
     vocabHints,
     difficultyMode,
     difficultyMessage,
     correctionMode,
     setCorrectionMode,
-    // Actions
     sendAudioChunk,
     sendAudioEnd,
     sendTextInput,

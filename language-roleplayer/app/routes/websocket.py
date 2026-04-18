@@ -114,9 +114,17 @@ async def conversation_websocket(ws: WebSocket, session_id: str):
     audio_buffer = b""
     user_turn_texts: list[str] = []  # For adaptive difficulty tracking
 
+    # Determine opening line — generate in-language if the scenario has none
+    opening = scenario.get("opening_line", "").strip()
+    if not opening:
+        opening = await llm.generate_opening_line(scenario)
+        # Keep session history consistent with the generated line
+        if opening and state.conversation_history and state.conversation_history[0].get("role") == "assistant":
+            state.conversation_history[0]["content"] = opening
+
     # Send session started
     await send_json(ws, "session_started", {
-        "opening_line": scenario.get("opening_line", ""),
+        "opening_line": opening,
         "scenario": {
             "title": scenario.get("title", ""),
             "setting": scenario.get("setting", ""),
@@ -127,8 +135,6 @@ async def conversation_websocket(ws: WebSocket, session_id: str):
         },
     })
 
-    # TTS the opening line
-    opening = scenario.get("opening_line", "")
     if opening:
         try:
             opening_audio = await tts.synthesize(opening, language, scenario.get("voice_id", ""))
