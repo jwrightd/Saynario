@@ -63,13 +63,13 @@ Transcript:
 
 GENERIC_OPENING_LINES = {
     "fr": "Bonjour, bienvenue. Qu'est-ce que vous cherchez aujourd'hui ?",
-    "es": "Hola, bienvenido. Que necesitas hoy?",
-    "de": "Hallo, willkommen. Womit kann ich Ihnen helfen?",
-    "ja": "Konnichiwa. Kyo wa nani o sagashite imasu ka?",
-    "zh": "Ni hao, huan ying. Jin tian xiang lian xi shen me?",
+    "es": "Hola, bienvenido. ¿En qué le puedo ayudar?",
+    "de": "Hallo, herzlich willkommen. Womit kann ich Ihnen helfen?",
+    "ja": "いらっしゃいませ！今日はどのようなご用件でしょうか？",
+    "zh": "你好，欢迎光临！今天需要什么帮助？",
     "it": "Buongiorno, benvenuto. Come posso aiutarla oggi?",
-    "pt": "Ola, bem-vindo. Como posso ajudar voce hoje?",
-    "ko": "Annyeonghaseyo. Oneul mueoseul yeonseuphago sipeuseyo?",
+    "pt": "Olá, bem-vindo! Como posso ajudá-lo hoje?",
+    "ko": "어서 오세요! 오늘은 무엇을 도와드릴까요?",
     "en": "Hello, welcome. What would you like to practice today?",
 }
 
@@ -214,15 +214,37 @@ def _infer_scene_template(scenario: dict, focus_areas: list[str], review_vocab: 
         scenario.get("setting", ""),
     ]).lower()
 
-    if any(keyword in text for keyword in ["food", "restaurant", "ordering", "menu", "drink", "dish", "cafe"]):
-        return "cafe"
-    if any(keyword in text for keyword in ["shopping", "market", "currency", "price", "gift", "buy"]):
-        return "market"
-    if any(keyword in text for keyword in ["train", "metro", "station", "platform", "travel", "directions"]):
-        return "transit"
-    if any(keyword in text for keyword in ["interview", "meeting", "office", "work", "appointment"]):
-        return "office"
-    return "social"
+    # Rank candidates, then skip if it matches the current scenario's template
+    # so the recommendation is always a fresh context.
+    current_title = scenario.get("title", "").lower()
+
+    def _current_is(template_key: str) -> bool:
+        keywords = {
+            "cafe": ["cafe", "coffee", "ramen", "restaurant", "bistro"],
+            "market": ["market", "shop", "store", "stall"],
+            "transit": ["train", "metro", "station", "bus"],
+            "office": ["office", "interview", "meeting", "reception"],
+            "social": ["class", "community", "club", "activity"],
+        }
+        return any(kw in current_title for kw in keywords.get(template_key, []))
+
+    order = []
+    if any(kw in text for kw in ["food", "restaurant", "ordering", "menu", "drink", "dish", "cafe", "ramen"]):
+        order.append("cafe")
+    if any(kw in text for kw in ["shopping", "market", "currency", "price", "gift", "buy"]):
+        order.append("market")
+    if any(kw in text for kw in ["train", "metro", "station", "platform", "travel", "directions"]):
+        order.append("transit")
+    if any(kw in text for kw in ["interview", "meeting", "office", "work", "appointment"]):
+        order.append("office")
+    for t in ["cafe", "market", "transit", "office", "social"]:
+        if t not in order:
+            order.append(t)
+
+    for candidate in order:
+        if not _current_is(candidate):
+            return candidate
+    return order[0]
 
 
 def _build_standalone_mock_scenario(
@@ -256,7 +278,7 @@ def _build_standalone_mock_scenario(
             limit=6,
         ),
         max_turns=max(10, min(int(scenario.get("max_turns", 12)), 16)),
-        opening_line=GENERIC_OPENING_LINES.get(target_language, GENERIC_OPENING_LINES["en"]),
+        opening_line="",
         success_criteria=template["success_criteria"],
         voice_id="",
     )
@@ -488,11 +510,7 @@ def _sanitize_recommendation(
             limit=6,
         ),
         max_turns=max(6, min(next_scenario.max_turns, 24)),
-        opening_line=_clean_text(
-            next_scenario.opening_line,
-            scenario.get("opening_line")
-            or GENERIC_OPENING_LINES.get(target_language, GENERIC_OPENING_LINES["en"]),
-        ),
+        opening_line="",
         success_criteria=_clean_text(
             next_scenario.success_criteria,
             scenario.get("success_criteria", "Practice the target conversation successfully."),
@@ -554,11 +572,16 @@ class GeminiCoachService:
         evaluation: EvaluationReport,
         prior_profile: LearnerProfile,
     ) -> tuple[CoachRecommendation, LearnerProfile]:
+        # Exclude last_recommended_scenario so Gemini doesn't anchor to it
+        # and generate a continuation of the previous recommendation.
+        profile_for_prompt = prior_profile.model_dump(mode="json")
+        profile_for_prompt.pop("last_recommended_scenario", None)
+
         prompt = COACH_PROMPT.format(
             target_language=scenario.get("target_language", prior_profile.target_language or "fr"),
             scenario_json=json.dumps(scenario, ensure_ascii=False, indent=2),
             evaluation_json=json.dumps(evaluation.model_dump(mode="json"), ensure_ascii=False, indent=2),
-            prior_profile_json=json.dumps(prior_profile.model_dump(mode="json"), ensure_ascii=False, indent=2),
+            prior_profile_json=json.dumps(profile_for_prompt, ensure_ascii=False, indent=2),
             transcript_json=json.dumps(conversation_history, ensure_ascii=False, indent=2),
         )
 

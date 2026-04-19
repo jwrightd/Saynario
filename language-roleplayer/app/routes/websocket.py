@@ -17,6 +17,13 @@ import re
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.session_manager import get_session_manager
+
+
+def _strip_action_text(text: str) -> str:
+    """Remove stage directions in *asterisks* or [brackets] before TTS."""
+    text = re.sub(r'\*[^*]*\*', '', text)
+    text = re.sub(r'\[[^\]]*\]', '', text)
+    return re.sub(r'\s+', ' ', text).strip()
 from app.services.stt import create_stt_service
 from app.services.llm import create_llm_service
 from app.services.tts import create_tts_service, split_into_sentences
@@ -207,32 +214,47 @@ async def conversation_websocket(ws: WebSocket, session_id: str):
                 if re.search(r'[.!?…]\s', sentence_buffer) or (
                     len(sentence_buffer) > 120 and sentence_buffer.endswith((" ", "\n"))
                 ):
-                    sentences = split_into_sentences(sentence_buffer)
+                    # Find the last complete sentence boundary so any trailing
+                    # fragment stays in sentence_buffer and keeps accumulating.
+                    last_match = None
+                    for m in re.finditer(r'[.!?…]\s+', sentence_buffer):
+                        last_match = m
+                    if last_match:
+                        to_speak = sentence_buffer[:last_match.end()].strip()
+                        sentence_buffer = sentence_buffer[last_match.end():]
+                    else:
+                        to_speak = sentence_buffer
+                        sentence_buffer = ""
+
+                    sentences = split_into_sentences(to_speak)
                     if sentences:
                         for sent in sentences:
-                            if len(sent) >= settings.min_sentence_chars_for_tts:
-                                seq_copy = audio_seq
-                                audio_seq += 1
+                            speakable = _strip_action_text(sent)
+                            if not speakable:
+                                continue
+                            seq_copy = audio_seq
+                            audio_seq += 1
 
-                                async def _tts_chunk(text=sent, seq=seq_copy):
-                                    try:
-                                        audio = await tts.synthesize(text, language, scenario.get("voice_id", ""))
-                                        await send_json(ws, "npc_audio", {
-                                            "audio": base64.b64encode(audio).decode(),
-                                            "seq": seq,
-                                        })
-                                    except Exception as ex:
-                                        logger.error(f"TTS chunk error: {ex}")
+                            async def _tts_chunk(text=speakable, seq=seq_copy):
+                                try:
+                                    audio = await tts.synthesize(text, language, scenario.get("voice_id", ""))
+                                    await send_json(ws, "npc_audio", {
+                                        "audio": base64.b64encode(audio).decode(),
+                                        "seq": seq,
+                                    })
+                                except Exception as ex:
+                                    logger.error(f"TTS chunk error: {ex}")
 
-                                tts_tasks.append(asyncio.create_task(_tts_chunk()))
-                        sentence_buffer = ""
+                            tts_tasks.append(asyncio.create_task(_tts_chunk()))
 
         await send_json(ws, "npc_text", {"text": full_response, "is_final": True})
 
-        # TTS any remaining sentence buffer
-        if sentence_buffer.strip() and len(sentence_buffer.strip()) >= settings.min_sentence_chars_for_tts:
+        # TTS any remaining sentence buffer — no min-char guard since this is
+        # the end of the response and every word should be spoken.
+        final_speakable = _strip_action_text(sentence_buffer)
+        if final_speakable:
             try:
-                audio = await tts.synthesize(sentence_buffer.strip(), language, scenario.get("voice_id", ""))
+                audio = await tts.synthesize(final_speakable, language, scenario.get("voice_id", ""))
                 await send_json(ws, "npc_audio", {
                     "audio": base64.b64encode(audio).decode(),
                     "seq": audio_seq,
@@ -240,21 +262,25 @@ async def conversation_websocket(ws: WebSocket, session_id: str):
                 audio_seq += 1
             except Exception as e:
                 logger.error(f"TTS final chunk error: {e}")
-        elif not tts_tasks and full_response.strip():
-            # Fallback: if no sentence boundaries were hit (very short response), TTS the whole thing
-            try:
-                audio = await tts.synthesize(full_response.strip(), language, scenario.get("voice_id", ""))
-                await send_json(ws, "npc_audio", {
-                    "audio": base64.b64encode(audio).decode(),
-                    "seq": audio_seq,
-                })
-                audio_seq += 1
-            except Exception as e:
-                logger.error(f"TTS error: {e}")
+        elif not tts_tasks:
+            # Fallback: no sentence boundaries hit at all (very short response).
+            fallback_speakable = _strip_action_text(full_response)
+            if fallback_speakable:
+                try:
+                    audio = await tts.synthesize(fallback_speakable, language, scenario.get("voice_id", ""))
+                    await send_json(ws, "npc_audio", {
+                        "audio": base64.b64encode(audio).decode(),
+                        "seq": audio_seq,
+                    })
+                    audio_seq += 1
+                except Exception as e:
+                    logger.error(f"TTS error: {e}")
 
-        # Wait for any in-flight TTS tasks
+        # Wait for any in-flight TTS tasks, then signal the client that all
+        # audio for this turn has been sent so it can snapshot the replay cache.
         if tts_tasks:
             await asyncio.gather(*tts_tasks, return_exceptions=True)
+        await send_json(ws, "npc_turn_done", {})
 
         state.add_npc_turn(full_response)
 
@@ -354,10 +380,7 @@ async def conversation_websocket(ws: WebSocket, session_id: str):
                     })
                     continue
                 audio_buffer += chunk
-
-                vad_result = vad.process_chunk(chunk)
-                if vad_result["speech_ended"] and len(audio_buffer) > 0:
-                    await flush_audio_buffer()
+                vad.process_chunk(chunk)  # keep VAD state warm but don't auto-flush
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: session {session_id}")

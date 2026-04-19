@@ -27,9 +27,10 @@ Difficulty Level: {difficulty}
 Current NPC Speech Mode: {npc_mode}
 
 CORE RULES:
-1. ONLY respond in {language_name}. Never use English unless the user explicitly says "hint" or "help".
+1. {language_rule}
 2. Stay completely in character as the {npc_role} at all times.
 3. Keep responses natural and conversational.
+{script_rule}
 
 NATIVE LANGUAGE INSTRUCTION:
 {npc_system_instruction}
@@ -107,6 +108,20 @@ class LLMService:
                          "de": "German (Deutsch)", "ja": "Japanese (日本語)"}
         language_name = scenario.get("language_name", default_names.get(lang_code, lang_code))
 
+        if lang_code == "en":
+            language_rule = "Respond naturally in English. Stay in character at all times."
+        else:
+            language_rule = (
+                f'ONLY respond in {language_name}. '
+                f'Never use English unless the user explicitly says "hint" or "help".'
+            )
+
+        script_rule = (
+            "5. Write ONLY in Japanese script (hiragana, katakana, kanji). Never use romaji."
+            if lang_code == "ja"
+            else ""
+        )
+
         return BASE_SYSTEM_PROMPT.format(
             npc_role=scenario.get("npc_role", "a friendly local"),
             npc_personality=scenario.get("npc_personality", "friendly and patient"),
@@ -118,6 +133,8 @@ class LLMService:
             success_criteria=scenario.get("success_criteria", "Have a natural conversation"),
             spaced_repetition_instruction=sr_instruction,
             npc_system_instruction=scenario.get("npc_system_instruction", f"Please respond only in {language_name}."),
+            language_rule=language_rule,
+            script_rule=script_rule,
         ) + correction_block
 
     async def generate_response(
@@ -177,10 +194,16 @@ class LLMService:
         npc_role = scenario.get("npc_role", "a friendly local")
         personality = scenario.get("npc_personality", "friendly and patient")
         setting = scenario.get("setting", "")
+        lang_code = scenario.get("target_language", "fr")
+        if lang_code == "en":
+            lang_instruction = "Respond naturally in English."
+        else:
+            lang_instruction = f"Respond ONLY in {lang_name} — no English at all."
+
         prompt = (
             f"You are {npc_role}. Personality: {personality}. Setting: {setting}\n\n"
             f"Write one natural opening greeting to start a conversation with a language learner. "
-            f"Respond ONLY in {lang_name} — no English at all. 1-2 sentences maximum."
+            f"{lang_instruction} 1-2 sentences maximum."
         )
         try:
             response = await self.client.messages.create(

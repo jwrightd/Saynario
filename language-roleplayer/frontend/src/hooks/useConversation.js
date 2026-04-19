@@ -37,6 +37,7 @@ export default function useConversation(sessionId) {
   const sessionSavedRef = useRef(false);
   const npcTurnIdRef = useRef(0);
   const pendingAudioRef = useRef([]); // { seq, audio } for the current NPC turn
+  const pendingCacheTurnIdRef = useRef(null); // turnId waiting for npc_turn_done
 
   // ── Reset all state when session changes (same-route navigation) ────────────
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function useConversation(sessionId) {
     npcBufferRef.current = '';
     npcTurnIdRef.current = 0;
     pendingAudioRef.current = [];
+    pendingCacheTurnIdRef.current = null;
     scenarioInfoRef.current = null;
     sessionSavedRef.current = false;
   }, [sessionId]);
@@ -155,8 +157,8 @@ export default function useConversation(sessionId) {
           });
           npcBufferRef.current = '';
           setIsProcessing(false);
-          // Sentence-level TTS audio may still be arriving; collect for 600ms
-          cacheTurnAudio(turnId, 600);
+          // Store turnId; cache is snapshotted on npc_turn_done once all TTS is sent.
+          pendingCacheTurnIdRef.current = turnId;
         } else {
           npcBufferRef.current += data.text;
           const current = npcBufferRef.current;
@@ -169,9 +171,18 @@ export default function useConversation(sessionId) {
 
       case 'npc_audio':
         queueAudio(data.audio, data.seq ?? 0);
-        // Also accumulate for replay cache
         pendingAudioRef.current.push({ seq: data.seq ?? 0, audio: data.audio });
         break;
+
+      case 'npc_turn_done': {
+        // All TTS audio for this turn has been sent — snapshot the replay cache now.
+        const tid = pendingCacheTurnIdRef.current;
+        if (tid !== null) {
+          pendingCacheTurnIdRef.current = null;
+          cacheTurnAudio(tid, 0);
+        }
+        break;
+      }
 
       case 'vocab_hints':
         if (data.hints && data.hints.length > 0) {
@@ -189,10 +200,6 @@ export default function useConversation(sessionId) {
         setDifficultyMode(data.new_mode);
         setDifficultyMessage(data.message);
         setTimeout(() => setDifficultyMessage(null), 4000);
-        setMessages((prev) => [
-          ...prev,
-          { role: 'system', text: `🎯 ${data.message}`, isDifficulty: true },
-        ]);
         break;
 
       case 'evaluation':
